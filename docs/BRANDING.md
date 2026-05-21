@@ -62,15 +62,110 @@ See `VISION.md` → Voice & tone. The four pillars (Clarity, Purpose, Simplicity
 
 ---
 
-## Colour, typography, spacing
+## Visual design language
 
-To be sourced from thisisgravitas.com once we scaffold the design tokens. Convention:
+The Co-Pilot mirrors thisisgravitas.com's identity: **dark mode only, type-led, restrained, premium**. Default Tailwind/shadcn styling is the **starting point** — every visitor-facing surface must feel slimmer, smoother, and more deliberate than stock.
 
-- Colours: extend Tailwind theme in `tailwind.config.ts` — never inline hex values
-- Typography: load Gravitas's brand fonts (or closest licensed equivalent) via `next/font`
-- Spacing: stick to the Tailwind default scale unless a Gravitas system specifies otherwise
+### Direction
 
-When the official brand guide is available, codify it in this doc.
+- **Dark mode only.** No light-mode toggle in Phase 1–3. Simpler to maintain, matches the brand strictly. If a future ask requires light mode, it goes in `ROADMAP.md` backlog.
+- **Type-led layouts.** Copy is the visual. Avoid hero images that dominate over the message.
+- **High contrast.** White / off-white type on near-black background.
+- **Single accent colour.** Blue (matching thisisgravitas.com's "Connect" / CTA usage). Used sparingly — never for decoration, always for action or emphasis.
+- **Sans-serif throughout.** Geometric, modern. Use `next/font` with `display: swap` to avoid FOUT.
+- **Generous whitespace.** Density is the enemy of "Clarity."
+
+### Required UI stack (beyond Tailwind + shadcn)
+
+These libraries are explicitly approved — they are not "new paid services" requiring approval. All are MIT or MIT-equivalent. The goal is a slim, smooth, polished surface that doesn't read as another stock Tailwind dashboard.
+
+| Library | Purpose | Notes |
+|---|---|---|
+| **shadcn/ui** | Accessible primitives (button, dialog, input, etc.) | Own the components by copying into `src/components/ui/`. Already in the conventions. |
+| **Aceternity UI** | Premium component patterns — animated gradients, beam effects, glow cards, kinetic text, animated borders | **Copy patterns, don't `npm install` the library.** Each chosen pattern lives in `src/components/aceternity/<name>.tsx` and is owned/owned. Pick: AuroraBackground, MovingBorder, TextGenerateEffect, BackgroundBeams, CardHoverEffect, AnimatedTooltip. |
+| **Framer Motion** | React component-level animation: mount/exit, layout transitions, gesture | Already in the conventions. Use the shared `canvasEnter` variant for canvas-component entry per `UI_CONTRACT.md`. |
+| **GSAP** | Scroll-triggered sequences, complex hero timelines, scrubbed scroll | The hero on `/copilot` is choreographed with GSAP's `ScrollTrigger` and a master timeline. Don't use GSAP for what Framer Motion does well (component lifecycle). |
+| **Lenis** | Buttery smooth scroll | Wraps the body. Replaces native browser scroll with inertial easing. ~5KB. Sets the tone immediately. |
+| **Vaul** | Premium drawer / bottom-sheet primitive | For mobile menus, side panels, takeover dismissal animation |
+| **Sonner** | Toast notifications | Replaces shadcn's basic toast — stacked, smoothly animated, dark-mode-native |
+| **next-themes** | Theme provider | Dark by default; future-proofs without committing to a light mode |
+| **Tremor** | Admin panel charts / KPI tiles | Already in the admin panel conventions |
+
+### Composition rules
+
+- **shadcn = skeleton.** Accessibility-first primitives.
+- **Aceternity = polish.** Drop-in patterns for hero / background / cards.
+- **Framer Motion = component lifecycle.** Mount, exit, gesture, layout.
+- **GSAP = scroll + time.** ScrollTrigger, master timelines, scrubbed sequences.
+- **Lenis = the scroll itself.** Mounted once at the root.
+
+Framer Motion and GSAP do **not** fight if you keep their responsibilities separate. If you find yourself reaching for one inside the other's domain, you're using the wrong tool — stop and reconsider.
+
+### Animation principles
+
+- **Motion has meaning.** Every animation reinforces the content's purpose. Decorative motion is forbidden.
+- **Easing is editorial.** Default to custom curves (e.g., `cubic-bezier(0.22, 1, 0.36, 1)` — "out-expo-soft"). Avoid the stock Tailwind transitions.
+- **Duration restraint.** UI feedback: 150–250ms. Page transitions: 400–700ms. Hero / scroll sequences: as long as the content demands, never gratuitous.
+- **Stagger.** When multiple elements enter together, stagger by 40–80ms for a felt rhythm.
+- **Reduced motion respected.** All animations check `prefers-reduced-motion` and degrade to instant transitions when set.
+- **60fps non-negotiable.** Profile every scroll-triggered sequence. If frame drops, simplify. Premium ≠ heavy.
+
+### Colour tokens
+
+Extended into `tailwind.config.ts`. Authoritative source — never inline hex.
+
+```ts
+// Gravitas dark theme — Phase 0 baseline; refined when official brand tokens land
+colors: {
+  background: {
+    DEFAULT: "#0A0A0B",   // near-black, the canvas
+    elevated: "#141416",  // cards, modals
+    overlay:  "#1C1C1F",  // tooltips, dropdowns
+  },
+  foreground: {
+    DEFAULT: "#F5F5F7",   // primary text
+    muted:   "#A1A1AA",   // secondary text
+    subtle:  "#52525B",   // tertiary text, dividers
+  },
+  accent: {
+    DEFAULT: "#3B82F6",   // brand blue — refine to exact Gravitas blue when available
+    hover:   "#60A5FA",
+    subtle:  "#1E3A8A",
+  },
+  border: {
+    DEFAULT: "#27272A",
+    strong:  "#3F3F46",
+  },
+}
+```
+
+**Refine when:** Gravitas brand team provides official hex values for the primary blue and grey scale. Until then, the values above are a calibrated baseline.
+
+### Typography stack
+
+```ts
+// next/font
+const sans = localFont({
+  src: [
+    { path: "./fonts/GravitasSans-Regular.woff2", weight: "400" },
+    { path: "./fonts/GravitasSans-Medium.woff2",  weight: "500" },
+    { path: "./fonts/GravitasSans-Bold.woff2",    weight: "700" },
+  ],
+  variable: "--font-sans",
+  display: "swap",
+});
+```
+
+**Until brand fonts are licensed**, fall back to `Inter` (Google Fonts) — neutral, high-quality, MIT. Document the fallback explicitly so it's obvious it's a placeholder.
+
+### What NOT to ship
+
+- Stock Tailwind transitions on hover (use Framer/GSAP with intentional easing)
+- Bouncy / springy "playful" motion — clashes with the Gravitas voice
+- Gradients on text where it harms legibility (only on backgrounds with sufficient contrast)
+- 3D / WebGL effects in Phase 1–2 (no use case justifies the perf cost yet)
+- Auto-playing carousels (a 2008 pattern that violates "Simplicity")
+- Skeleton-loader shimmer in the canvas — the canvas itself communicates loading via component-specific affordances
 
 ---
 

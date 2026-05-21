@@ -102,6 +102,7 @@ Move from one-shot audit to genuine multi-agent reasoning.
 - Persistent session (Supabase) so a visitor returning within 24h can resume
 - Strategy agent grounds recommendations in the KB; cites case studies (e.g. ADCB AI Knowledge Base) when relevant. (KB refresh pipeline itself lives in Phase 1; Phase 2 just leans on it from a new node.)
 - **Admin panel (full):** Usage & Cost charts (daily spend, by model, by purpose, by node, per-session histogram, top expensive sessions); KB panel with run history; Waitlist management; topic clustering of visitor queries (Ollama-powered nightly job); CSV export; gated actions (manual KB reseed, raise cap for the day, send "we're back" email)
+- **Curated Answers — admin-authored knowledge layered on the auto-crawled KB:** new admin route `/admin/answers` with full CRUD editor (title, Markdown body, tags, optional exact-match trigger phrases, weight 1.0–5.0, status). Save → embeds via Ollama → upserts to a separate `gravitas-curated` Chroma collection. The agent's `kb_search` tool becomes hybrid — queries both `gravitas-kb` and `gravitas-curated`, merges, applies each curated answer's weight (default 1.5×). High-value workflow: from `/admin/queries` topic clusters, "Create curated answer for this topic" pre-fills the editor with the topic label and sample messages. See `docs/ADMIN_PANEL.md` → Curated Answers.
 
 **Definition of Done**
 

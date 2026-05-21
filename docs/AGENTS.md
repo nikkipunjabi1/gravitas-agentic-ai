@@ -225,9 +225,17 @@ Fallback chain for Ollama unavailability (CI, no GPU): all Ollama purposes degra
 | Tool | Purpose | Where defined |
 |---|---|---|
 | `crawl_url` | POST to crawl worker, return audit JSON | `src/agents/tools/crawl-url.ts` |
-| `kb_search` | Top-k chunks from Gravitas KB in Chroma | `src/agents/tools/kb-search.ts` |
+| `kb_search` | Top-k chunks from Gravitas KB — **queries both `gravitas-kb` (auto-crawled) and `gravitas-curated` (admin-authored, Phase 2)**, merges results, applies the per-row `weight` boost | `src/agents/tools/kb-search.ts` |
 | `render_ui` | Emit a validated `UIAction` to the stream | `src/agents/tools/render-ui.ts` |
 | `generate_brief_pdf` | (Phase 3) build PDF, return signed URL | `src/agents/tools/brief-pdf.ts` |
+
+**Hybrid retrieval — auto-crawled + admin-curated:**
+
+- Phase 1: `kb_search` queries only `gravitas-kb` (auto-crawled from sitemap)
+- Phase 2: `kb_search` becomes hybrid — also queries `gravitas-curated` (admin-authored via `/admin/answers`), merges results, applies each curated answer's `weight` multiplier (default 1.5×). When relevance is comparable, curated answers win.
+- Trigger-phrase override: if a visitor's message contains any of a curated answer's `trigger_phrases` (exact match, case-insensitive), that answer surfaces regardless of embedding score. Use sparingly — embeddings are usually the right tool.
+
+This is the high-value loop: admin observes a trending topic in `/admin/queries` → writes a canonical Gravitas answer in `/admin/answers` → the next visitor asking semantically close questions gets the curated answer, not a paraphrase of marketing copy. See `ADMIN_PANEL.md` → Curated Answers for the workflow.
 
 Every tool:
 - Declares a zod input schema and a zod output schema

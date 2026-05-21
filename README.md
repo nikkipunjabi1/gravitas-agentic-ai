@@ -37,7 +37,8 @@ The agent is grounded in real Gravitas services (Experience Strategy & Design, P
 
 | Layer | Choice |
 |---|---|
-| Frontend | Next.js (App Router) + Tailwind + shadcn/ui + Framer Motion |
+| Frontend — skeleton | Next.js (App Router) + Tailwind + shadcn/ui |
+| Frontend — polish | Framer Motion + GSAP + Lenis + Aceternity UI patterns + Vaul + Sonner + next-themes. Dark-mode-only, matching thisisgravitas.com. Full direction in [BRANDING.md](docs/BRANDING.md). |
 | Agent runtime | LangGraph (TypeScript) inside Next.js API routes |
 | Crawl worker | Separate Node service running Playwright + Cheerio |
 | Models — reasoning | Ollama / DeepSeek-R1 (local, free) |

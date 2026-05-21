@@ -125,7 +125,8 @@ gravitas-agentic-ai/
 | Runtime | Node 22 LTS | Inside WSL2 on dev, on Vercel/Fly in prod |
 | Package manager | pnpm | Workspaces if/when we split packages |
 | Web framework | Next.js (App Router, latest stable) | RSC + server actions where helpful |
-| UI | Tailwind, shadcn/ui, Framer Motion | No CSS-in-JS |
+| UI — primitives | Tailwind, shadcn/ui | No CSS-in-JS |
+| UI — animation & polish | Framer Motion (component lifecycle) + GSAP (scroll + time) + Lenis (smooth scroll) + Aceternity UI patterns + Vaul + Sonner + next-themes | Dark-mode-only. Premium feel matching thisisgravitas.com. Full direction in `docs/BRANDING.md` → Visual design language. |
 | Streaming | Vercel AI SDK (`ai`) | Data Stream Protocol with custom data parts for `UIAction` |
 | Agent runtime | `@langchain/langgraph` (TS) | Stateful graph; persistence via Supabase checkpointer |
 | Validation | `zod` | At every external boundary |

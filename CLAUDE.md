@@ -37,7 +37,7 @@ The current phase is the one marked **IN PROGRESS** in `docs/ROADMAP.md`.
 
 - **Language:** TypeScript, `strict` on. No `any` without a `// reason: ...` comment.
 - **Framework:** Next.js App Router only. No Pages router.
-- **Styling:** Tailwind + shadcn/ui. No CSS-in-JS libraries. No ad-hoc design tokens — extend Tailwind theme.
+- **Styling:** Tailwind + shadcn/ui (skeleton). **Polish layer is required, not optional**: Framer Motion (component lifecycle), GSAP (scroll + time), Lenis (smooth scroll), Aceternity UI patterns (copied into `src/components/aceternity/`, not npm-installed), Vaul (drawers), Sonner (toasts), next-themes. No CSS-in-JS libraries. No ad-hoc design tokens — extend Tailwind theme. **Dark mode only** in Phase 1–3. Full visual direction in `docs/BRANDING.md` → Visual design language.
 - **State:** Server Components by default. Client Components only where interactivity demands it.
 - **Streaming:** Use the Vercel AI SDK Data Stream Protocol for agent responses. The canvas consumes structured `UIAction` events from the same stream — see `docs/UI_CONTRACT.md`.
 - **Schemas:** Every external boundary (LLM tool args, API input, `UIAction` payloads) goes through a zod schema. No untyped JSON crossing a wire.

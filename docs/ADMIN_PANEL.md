@@ -162,6 +162,88 @@ Cache for 30s on the server to avoid hammering them. **No live polling from the 
 - Recent crawl errors (URL, status, error message)
 - Phase 2: "reseed now" button (gated, asks for confirmation)
 
+### Curated Answers `/admin/answers` *(Phase 2)*
+
+Admin-authored knowledge that the agent uses **on top of** the auto-crawled KB. The use case: you notice in topic clustering that 10–20 visitors are asking about a topic the auto-crawled site doesn't address well. You write the canonical Gravitas answer here. The agent starts using it for the next visitor, within seconds.
+
+**Two-source KB:**
+
+| Collection | Source | Cadence | Retrieval weight |
+|---|---|---|---|
+| `gravitas-kb` | Auto-crawled from thisisgravitas.com sitemap | Daily incremental | 1.0× (baseline) |
+| `gravitas-curated` | This admin view | On save | **default 1.5×** (configurable per answer up to 5.0×) |
+
+The agent's `kb_search` tool queries both, merges, and applies the weight. Curated answers don't replace the crawled site — they layer on top for topics you care about most.
+
+**List view** — `/admin/answers`
+
+- Table: title, tags, status, weight, updated_at, updated_by
+- Filters: status (draft / published / archived), tag, date range
+- Sort: updated_at desc default
+- "New curated answer" button → editor
+
+**Editor** — `/admin/answers/new` and `/admin/answers/[id]`
+
+- Title (required, ≤ 120 chars)
+- Body (required, Markdown with live preview pane)
+- Tags (free-text array; autocompletes from existing tags)
+- Trigger phrases (optional; exact-match overrides — if visitor's message contains any phrase, this answer surfaces regardless of embedding score)
+- Weight (default 1.5, range 1.0–5.0, with a tooltip explaining the multiplier)
+- Status: draft (not retrieved) / published (live) / archived (preserved, not retrieved)
+- Save → writes Supabase row → calls `worker/kb/embed-curated` → Ollama embeds + chunks → upserts to `gravitas-curated` Chroma collection. Indicator shows "indexed at HH:MM" once complete.
+
+**Workflow from topic clustering** — the high-value loop
+
+In `/admin/queries` (Phase 2), when a topic cluster shows ≥ N sessions in the last N days, a **"Create curated answer for this topic"** button appears on the cluster row. Click → editor pre-filled with:
+
+- `title` ← topic label (editable)
+- `tags` ← the cluster's auto-extracted tags
+- `body` ← a draft scaffold: *"At Gravitas, we approach [topic] by..."* with three to five visitor sample messages quoted below as context for the writer
+
+The admin writes the canonical answer, hits Save, and the next visitor who asks something semantically close gets the answer the team wrote — not whatever the LLM paraphrased from the marketing site.
+
+**Audit / history**
+
+- `created_by` and `updated_by` on every row (Supabase user reference)
+- Edits show in `/admin/sessions` retroactively: if a curated answer surfaced in a session, the session's transcript view marks the assistant message with "via curated answer: [title] →" linking to the version that was active at the time
+- Phase 3: a `curated_answer_versions` append-only table to support time-travel ("show me what was active two weeks ago"). Phase 2 keeps a single row updated in place.
+
+**Data schema**
+
+```sql
+create table curated_answers (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  body text not null,                            -- Markdown
+  tags text[] not null default '{}',
+  trigger_phrases text[] not null default '{}',  -- optional exact-match overrides
+  weight numeric not null default 1.5 check (weight >= 1.0 and weight <= 5.0),
+  status text not null default 'published' check (status in ('draft','published','archived')),
+  created_at timestamptz not null default now(),
+  created_by uuid references auth.users(id),
+  updated_at timestamptz not null default now(),
+  updated_by uuid references auth.users(id),
+  last_embedded_at timestamptz,
+  chunk_count int not null default 0
+);
+create index on curated_answers (status, updated_at desc);
+create index on curated_answers using gin (tags);
+```
+
+**Embedding flow**
+
+1. Admin hits Save in `/admin/answers/[id]`
+2. Row written to Supabase
+3. `worker/kb/embed-curated` invoked with the row ID
+4. Worker fetches the row, chunks the body (~500-token chunks with 50-token overlap), embeds via Ollama `nomic-embed-text`, upserts to `gravitas-curated` Chroma collection with metadata: `{ id, title, tags, weight, version }`
+5. On success, worker updates `last_embedded_at` and `chunk_count` on the row
+6. UI shows "indexed at HH:MM" indicator
+
+**Failure modes**
+
+- Embedding fails → row stays at the old `last_embedded_at`; admin sees a warning banner: "This answer hasn't re-indexed since [time]. Save again to retry."
+- Ollama unreachable → fall back to queuing the embed job; retry on Ollama recovery. Don't block the Save.
+
 ### Waitlist `/admin/waitlist` *(Phase 2)*
 
 - Captured cap-reached emails, sortable by `captured_at`
@@ -260,7 +342,7 @@ create table tool_calls (
 );
 ```
 
-Existing tables we read from: `cost_ledger` (now includes `lite_mode_substitutions`), `waitlist`, `kb_documents`, `ip_quota` (per-IP daily turn + audit counters — see `ARCHITECTURE.md` → Rate limiting).
+Existing tables we read from: `cost_ledger` (now includes `lite_mode_substitutions`), `waitlist`, `kb_documents`, `ip_quota` (per-IP daily turn + audit counters — see `ARCHITECTURE.md` → Rate limiting), `curated_answers` (Phase 2; admin-authored knowledge layered on top of the auto-crawled KB).
 
 ---
 
