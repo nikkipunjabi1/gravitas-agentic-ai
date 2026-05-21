@@ -10,7 +10,7 @@ A front-facing agentic AI layer for [thisisgravitas.com](https://thisisgravitas.
 
 ## What this is
 
-A dual-pane experience embedded on the Gravitas site:
+A dual-pane experience hosted at **`https://ai.thisisgravitas.com`** and surfaced on the Gravitas marketing site via a floating launcher pill that opens it as a full-screen takeover.
 
 - **Left pane — The Strategist.** Conversational agent that asks the right questions and reasons through the visitor's situation.
 - **Right pane — The Canvas.** Dynamic surface where the agent *pulls in UI on demand* — roadmaps, maturity charts, audit findings, solution maps, lead forms — via typed tool calls.
@@ -31,7 +31,7 @@ The agent is grounded in real Gravitas services (Experience Strategy & Design, P
 
 ## Status
 
-**Planning.** No code yet. Docs first; Claude Code implements Phase 1 (MVP) once `ROADMAP.md` is approved.
+**Docs approved.** Planning complete across vision, architecture, agents, UI contract, branding, admin panel, and Windows setup. **Phase 0 (Foundation) is the active phase** — Claude Code begins scaffolding on the developer's Windows + WSL2 box. See `docs/ROADMAP.md` for the active phase deliverables and Definition of Done.
 
 ## Stack at a glance
 
@@ -53,10 +53,15 @@ See `ARCHITECTURE.md` for the full picture.
 
 ## MVP scope (Phase 1)
 
-- Dual-pane chat UI with streaming
-- URL audit: paste a URL → Playwright crawl → agent narrates findings into the canvas
-- Three canvas components: Roadmap, Maturity Chart, Audit Findings
-- Hybrid model routing (Ollama for reasoning, Claude for user-facing output)
+- Dual-pane chat UI with streaming over the Vercel AI SDK Data Stream Protocol
+- URL audit (one page, exactly): Playwright + Lighthouse + Cheerio against the visitor's submitted URL — no link-following
+- **Five canvas components** mapped to the Four-Lens framework: `AuditFindings`, `MaturityChart` (4-axis), `RoadmapWidget` (Must / Should / Could), `KeepAndBuildOn`, `ThemesGrid`
+- Hybrid model routing — Ollama (DeepSeek-R1 / Qwen3) for reasoning + free-tier voice fallback; Claude Sonnet 4.6 tagged `voice-light` or `voice-heavy`
+- Daily $50 Anthropic cap with graceful Ollama lite-mode for light purposes when exceeded; `DailyCapReached` UIAction for heavy purposes
+- Per-IP rate limits (20 chat turns + 1 audit / IP / day) with a visible counter when ≤ 5 turns remain
 - Solution mapping to Gravitas's five services
+- Gravitas KB seeded from thisisgravitas.com sitemap with scheduled daily incremental refresh
+- Minimal admin panel at `/admin/*` for live cost + sessions + transcripts + health
+- Marketing-site embedding: launcher pill on thisisgravitas.com opens the experience as a full-screen takeover iframe
 
 Anything beyond that lives in `ROADMAP.md` and is **not built without approval**.

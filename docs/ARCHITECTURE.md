@@ -556,6 +556,110 @@ External:
 
 The realistic burn is dominated by Claude actual usage, not infrastructure. Infrastructure rounds to ≤ $30/mo even at heavy load.
 
+## Embedding on thisisgravitas.com
+
+The Co-Pilot's canonical home is `https://ai.thisisgravitas.com`. It's also surfaced on the main marketing site (`thisisgravitas.com`) via a **floating launcher pill** that opens a **full-screen takeover** iframe.
+
+### Why a takeover, not a chat panel
+
+A traditional 400×600px chat panel can't render the Generative Canvas. The takeover gives the dual-pane experience full viewport room while still being launched from anywhere on the marketing site. The launcher pill is text-led ("Co-Pilot ↗") with Gravitas branding — **not** a chat-bubble icon. This distinction is what separates "Gravitas Co-Pilot" from "another agency chatbot."
+
+### Integration on the marketing site
+
+One line of HTML, served from the subdomain:
+
+```html
+<script src="https://ai.thisisgravitas.com/widget.js" defer></script>
+```
+
+That's the only change to thisisgravitas.com. The launcher script is hosted by the same Next.js app on the subdomain — single source of truth.
+
+### Topology
+
+```
+thisisgravitas.com                       ai.thisisgravitas.com  (Railway)
+─────────────────────                    ────────────────────────────────
+<script defer src="…/widget.js">  ◄────  /widget.js   (< 5KB, no deps)
+                                              │
+inject <button>"Co-Pilot ↗"                   │
+        │                                     │
+        └─ click → full-screen overlay        │
+                  with <iframe>     ────────► /copilot?embed=takeover
+                        ▲                          │
+                        │   postMessage bridge      │
+                        │   (origin-verified) ─────┤
+                        ▼                          │
+                  {type:"close"} ──► overlay teardown
+```
+
+### The launcher script (`public/widget.js`)
+
+Delivered from the Next.js public folder. Constraints:
+
+- **< 5 KB gzipped**, zero external dependencies (no React, no bundler runtime — vanilla TS compiled to a single IIFE)
+- `defer` on the `<script>` tag so it never blocks the marketing site's LCP
+- No preload of the iframe — fetch only on first click
+- Reads `<script data-position="bottom-left">` for position override (default: bottom-right)
+- Reads `<script data-page="services">` (optional) so analytics know which marketing page launched the session
+- Injects styled DOM into a Shadow DOM root to avoid CSS conflicts with the marketing site
+- Handles: button render, click → overlay open, ESC / X / outside-click → close, mobile responsive collapse
+- Logo: inline from `GRAVITAS_LOGO_DATA_URI` (no external fetch)
+
+The script never communicates with Anthropic, Supabase, or Ollama directly. All API calls happen inside the iframe context.
+
+### Embed mode (`?embed=takeover`)
+
+The `/copilot` route accepts an `embed` query param. When present:
+
+- Renders edge-to-edge (no marketing chrome, no nav, no footer — just the dual-pane)
+- Disables in-app links that would navigate away from the embed
+- Sends `{type: "ready"}` on mount via `postMessage` to the parent
+- Sends `{type: "close"}` when the visitor clicks the in-app close affordance
+- Shows a small "Open in new tab ↗" link that opens the canonical `https://ai.thisisgravitas.com/copilot` (preserves shareability)
+
+`embed=takeover` is the only currently-defined value, but the param is enum-shaped so we can add `embed=panel` (cramped 400px mode) later if a partner site needs it.
+
+### `postMessage` protocol — typed and origin-verified
+
+A typed protocol between widget.js (parent) and the iframe (subdomain). Both sides verify `event.origin` against the strict allowlist:
+
+```ts
+const ALLOWED_PARENT_ORIGINS = ["https://thisisgravitas.com", "https://www.thisisgravitas.com"];
+const ALLOWED_FRAME_ORIGIN   = "https://ai.thisisgravitas.com";
+
+type ParentToFrame =
+  | { type: "open", parentUrl: string, parentReferrer: string };
+
+type FrameToParent =
+  | { type: "ready" }
+  | { type: "close" }
+  | { type: "resize", height: number }    // reserved for non-takeover modes
+  | { type: "telemetry", event: string };  // optional, for parent-side analytics
+```
+
+Schemas live in `src/widget/protocol.ts` and are zod-validated on both sides. Any message that fails validation is dropped and logged. **Never** trust an unverified `postMessage` event.
+
+### Cookies and session
+
+- Visitor session state (session ID, IP-hash quota, etc.) is scoped to `ai.thisisgravitas.com` cookies — never leaks to the parent domain.
+- The launcher never sets cookies on `thisisgravitas.com`.
+- Admin auth cookies (Supabase, for `/admin/*`) also stay on the subdomain.
+
+### Privacy
+
+A short notice in the takeover overlay footer (visible without scrolling): *"Conversations are logged for quality."*
+
+This is required because the takeover is on `ai.thisisgravitas.com` and the visitor's expectation may be that they're still on the marketing site. Make the boundary clear.
+
+### CSP heads-up for thisisgravitas.com
+
+If the marketing site uses a Content Security Policy, two directives need updates:
+
+- `script-src` must allow `https://ai.thisisgravitas.com` (for `widget.js`)
+- `frame-src` (or `child-src`) must allow `https://ai.thisisgravitas.com` (for the iframe)
+
+Coordinate with whoever owns the marketing-site infrastructure before going live.
+
 ## Security
 
 - The crawl worker requires a shared secret on every request (`CRAWL_WORKER_SHARED_SECRET`). The Next.js app sends it; the worker rejects requests without it.

@@ -30,6 +30,14 @@ Secondary:
 - Buyer's team doing diligence
 - Existing Gravitas clients exploring new capabilities
 
+## How visitors reach it
+
+The canonical home is `https://ai.thisisgravitas.com`. On the marketing site (`thisisgravitas.com`), the experience is surfaced as a **floating launcher pill** ("Co-Pilot ↗") that opens the dual-pane in a full-screen takeover iframe. The pill is text-led and Gravitas-branded — not a chat-bubble icon — so it reads as a tool entry, not a support bot.
+
+The full-screen takeover bypasses the cramped-overlay weakness of traditional chatbot widgets: the Generative Canvas always gets full viewport room when engaged. The canonical URL is shareable and bookmarkable — an "Open in new tab ↗" affordance in the overlay gives visitors a way to share what they're seeing.
+
+Full integration details in `docs/ARCHITECTURE.md` → Embedding on thisisgravitas.com.
+
 ## What "good" looks like
 
 **Qualitative**
