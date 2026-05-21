@@ -39,7 +39,7 @@ Run this once at scaffold and whenever the logo changes. Commit the generated fi
 |---|---|
 | Canvas pane header | Small mark, top-left of the canvas, fixed position |
 | Audit report (canvas + PDF) | Full lockup in the report header |
-| Executive brief PDF (Phase 3) | Cover page + footer of every page |
+| Executive brief PDF (M5) | Cover page + footer of every page |
 | Daily cap card | Top-centre of the card |
 | Lead form | Top-left of the form |
 | Loading states | Subtle pulse animation on the mark |
@@ -52,7 +52,7 @@ import { GRAVITAS_LOGO_DATA_URI } from "@/lib/branding/logo";
 <img src={GRAVITAS_LOGO_DATA_URI} alt="Gravitas" className="h-6" />
 ```
 
-In a server-rendered PDF (Phase 3), the same constant is embedded inline.
+In a server-rendered PDF (M5), the same constant is embedded inline.
 
 ---
 
@@ -207,9 +207,9 @@ Total: **/100**, with the post-engagement target offered as the conversion narra
 
 ### Section-by-section template
 
-Every auto-audit produces the same sections in this order. Each section maps to data sources in `SessionState` and to canvas components in Phase 1 / PDF blocks in Phase 3.
+Every auto-audit produces the same sections in this order. Each section maps to data sources in `SessionState` and to canvas components in M2 / PDF blocks in M5.
 
-| # | Section | Source | Canvas (Phase 1) | PDF (Phase 3) |
+| # | Section | Source | Canvas (M2) | PDF (M5) |
 |---|---|---|---|---|
 | 1 | **Cover** | static + visitor metadata | — | Title, URL audited, date, Gravitas logo, "Confidential" footer |
 | 2 | **The Brief** | `visitor.namedProblem`, `submitted_url` | chat text + small card | Core question + a stats strip (1 page audited · 60s · Four lenses) |
@@ -273,15 +273,15 @@ Each finding emitted into `AuditFindings` follows the same shape:
 - **gravitasService** tag: maps to one of the five services (see `VISION.md`)
 - The fix lives in the corresponding Roadmap item, not the finding itself
 
-### Visual evidence (Phase 3)
+### Visual evidence (M5)
 
-The sample report's most powerful element is the *Subject vs Competitor* side-by-side screenshot pair. For Phase 3 PDF generation:
+The sample report's most powerful element is the *Subject vs Competitor* side-by-side screenshot pair. For M5 PDF generation:
 
 - A single annotated screenshot of the audited page, with callouts pointing at top findings
 - No fake competitor screenshot — instead, a stylized "what good looks like" diagram or omit the right column entirely
 - Screenshot captured by the crawl worker (`worker/src/screenshot.ts`) at standard mobile + desktop viewports
 
-Phase 1 canvas does NOT include the screenshot — it would bloat the experience and Lighthouse/Playwright screenshots are heavy. Add when PDF generation lands.
+The M2 canvas does NOT include the screenshot — it would bloat the experience and Lighthouse/Playwright screenshots are heavy. Add when PDF generation lands in M5.
 
 ### Closing contact — rotation
 

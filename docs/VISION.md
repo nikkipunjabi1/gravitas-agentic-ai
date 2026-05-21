@@ -47,7 +47,7 @@ Full integration details in `docs/ARCHITECTURE.md` → Embedding on thisisgravit
 - Three of the four pillars (Clarity, Purpose, Simplicity, Progress) are *felt*, not stated, by the end of the session
 - The voice is indistinguishable from a senior Gravitas strategist — never generic agency-speak
 
-**Quantitative (north stars, tracked from Phase 2)**
+**Quantitative (north stars, tracked from production traffic — M6 onwards)**
 
 - ≥ 40% of sessions reach the canvas (first UI render)
 - ≥ 15% of sessions complete the audit flow
@@ -72,7 +72,7 @@ This mapping is hard-wired into the agent — see `docs/AGENTS.md`.
 ## What the agent will NOT do
 
 - Pretend to be human
-- Generate proposals with prices, scopes, or commitments (until Phase 3, and even then gated by a Gravitas reviewer)
+- Generate proposals with prices, scopes, or commitments (backlog item — would always be gated by a Gravitas reviewer)
 - Promise outcomes ("we'll improve conversion by 30%")
 - Store PII without explicit consent
 - Crawl sites we don't have permission to crawl (visitor pastes their own URL; we do not background-crawl competitors)
@@ -97,12 +97,10 @@ Avoid:
 
 ## Anti-goals (Phase 1)
 
-- Multilingual support
-- Authenticated user accounts
-- Persistent session history across visits
-- CRM integration
-- Industry-specific modes (Banking, Government, Retail) — Phase 3
-- Live re-crawl on demand — single crawl per session is enough
+- Multilingual support — backlog
+- Authenticated user accounts for visitors (admin auth exists for `/admin/*`)
+- CRM integration — backlog
+- Live re-crawl on demand — single crawl per session is enough; for a different page, the visitor returns after the daily IP reset
 
 ## Success criterion for the doc set
 

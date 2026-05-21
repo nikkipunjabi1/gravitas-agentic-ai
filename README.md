@@ -45,7 +45,7 @@ The agent is grounded in real Gravitas services (Experience Strategy & Design, P
 | Models — user-facing copy & strategy | Claude Sonnet 4.6 via Anthropic API |
 | Embeddings | Ollama / `nomic-embed-text` |
 | Vector store | ChromaDB (local) → Qdrant (when we outgrow it) |
-| Storage / auth | Supabase (free tier OK through Phase 2) |
+| Storage / auth | Supabase (free tier is fine for initial scale; upgrade only when limits hit) |
 | Hosting (dev/demo) | Self-hosted on Windows + WSL2 box, exposed via Cloudflare Tunnel (free). $0/mo. |
 | Hosting (production) | **Railway** — Next.js + crawl worker + Chroma in one project. ~$5–15/mo via the existing paid Railway account. See [ARCHITECTURE.md → Deployment paths](docs/ARCHITECTURE.md). |
 | DNS / SSL / DDoS / Tunnel | Cloudflare free tier — sufficient, no upgrade needed. |

@@ -27,11 +27,13 @@ The current active phase as of this commit is **Phase 0 — Foundation**. It beg
 4. Read [docs/ADMIN_PANEL.md](docs/ADMIN_PANEL.md) before touching `/admin/*` routes, the logging chokepoint in the model router, or the Supabase log tables.
 5. If a doc disagrees with a user instruction, ask — don't silently pick.
 
-## Phasing — hard rule
+## Milestone discipline — hard rule
 
-We ship in phases (see `docs/ROADMAP.md`). **Do not start Phase N+1 work while Phase N is unfinished**, even if "it's only a small addition." If you see a tempting Phase 2 idea while building Phase 1, write it down in `docs/ROADMAP.md` under "Backlog" and move on.
+There is **one phase** — Phase 1 — covering the full Gravitas Co-Pilot scope. Inside it are six **milestones** (M1–M6) in `docs/ROADMAP.md`. They are verify-and-continue checkpoints, not approval gates.
 
-The current phase is the one marked **IN PROGRESS** in `docs/ROADMAP.md`.
+**Do not start M_{N+1} work while M_N is unfinished.** Each milestone must be working end-to-end and demo-able per its "Demo-able state" section before the next begins. If you see something tempting that fits a later milestone, add it to the **Backlog** in `ROADMAP.md` and move on — don't sneak it into the current milestone.
+
+The current milestone is the one marked **IN PROGRESS** in `docs/ROADMAP.md`. On completion of each milestone, report the demo-able state was achieved, then continue to the next without waiting for user sign-off. The user signs off **once** — at the end of M6.
 
 ## Conventions
 

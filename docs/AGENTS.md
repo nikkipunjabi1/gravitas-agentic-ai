@@ -15,7 +15,7 @@ Why a graph instead of an autonomous loop:
 - Easy to add a new station without re-prompting the whole thing
 - We can swap a station's model without touching the others
 
-Phase 3 may introduce a planning loop *within* one node. The top-level graph stays a graph.
+A later milestone (M6 or backlog) may introduce a planning loop *within* one node. The top-level graph stays a graph.
 
 ---
 
@@ -141,7 +141,7 @@ The audit report explicitly says this — see `docs/BRANDING.md` → "About this
 
 **Inputs:** Full `SessionState`.
 
-**Outputs:** A closing message in chat. A `UIAction` of type `LeadGenForm` (Phase 2) or `ExecutiveBriefDownload` (Phase 3).
+**Outputs:** A closing message in chat. A `UIAction` of type `LeadGenForm` (M3) or `ExecutiveBriefDownload` (M5).
 
 **Model:** Claude Sonnet 4.6.
 
@@ -186,7 +186,7 @@ The audit report explicitly says this — see `docs/BRANDING.md` → "About this
                                  └─────────────┘
 ```
 
-Discovery can loop on itself (more questions) until the gate condition is met. Every other node is single-pass in Phase 2. Phase 3 may allow Strategy ↔ Solution Mapping iteration.
+Discovery can loop on itself (more questions) until the gate condition is met. Every other node is single-pass through M5. A later milestone may allow Strategy ↔ Solution Mapping iteration.
 
 **Cap-reached terminal node.** Any node calling `purpose: "voice"` (Discovery in gravitas-question mode, Audit narration, Strategy, Output) can throw `DailyCapExceeded` if the router refuses the call. A single global fallback edge routes any node's `DailyCapExceeded` to the `CapReached` node. `CapReached` does NOT call any LLM — it composes a static Gravitas-voiced message and emits a `DailyCapReached` UIAction that captures the visitor's email. See `ARCHITECTURE.md` → Cost cap, and `UI_CONTRACT.md` → `DailyCapReached`.
 
@@ -225,14 +225,14 @@ Fallback chain for Ollama unavailability (CI, no GPU): all Ollama purposes degra
 | Tool | Purpose | Where defined |
 |---|---|---|
 | `crawl_url` | POST to crawl worker, return audit JSON | `src/agents/tools/crawl-url.ts` |
-| `kb_search` | Top-k chunks from Gravitas KB — **queries both `gravitas-kb` (auto-crawled) and `gravitas-curated` (admin-authored, Phase 2)**, merges results, applies the per-row `weight` boost | `src/agents/tools/kb-search.ts` |
+| `kb_search` | Top-k chunks from Gravitas KB — **queries both `gravitas-kb` (auto-crawled, from M2) and `gravitas-curated` (admin-authored, from M4)**, merges results, applies the per-row `weight` boost | `src/agents/tools/kb-search.ts` |
 | `render_ui` | Emit a validated `UIAction` to the stream | `src/agents/tools/render-ui.ts` |
-| `generate_brief_pdf` | (Phase 3) build PDF, return signed URL | `src/agents/tools/brief-pdf.ts` |
+| `generate_brief_pdf` | (M5) build PDF, return signed URL | `src/agents/tools/brief-pdf.ts` |
 
 **Hybrid retrieval — auto-crawled + admin-curated:**
 
-- Phase 1: `kb_search` queries only `gravitas-kb` (auto-crawled from sitemap)
-- Phase 2: `kb_search` becomes hybrid — also queries `gravitas-curated` (admin-authored via `/admin/answers`), merges results, applies each curated answer's `weight` multiplier (default 1.5×). When relevance is comparable, curated answers win.
+- M2: `kb_search` queries only `gravitas-kb` (auto-crawled from sitemap)
+- M4: `kb_search` becomes hybrid — also queries `gravitas-curated` (admin-authored via `/admin/answers`), merges results, applies each curated answer's `weight` multiplier (default 1.5×). When relevance is comparable, curated answers win.
 - Trigger-phrase override: if a visitor's message contains any of a curated answer's `trigger_phrases` (exact match, case-insensitive), that answer surfaces regardless of embedding score. Use sparingly — embeddings are usually the right tool.
 
 This is the high-value loop: admin observes a trending topic in `/admin/queries` → writes a canonical Gravitas answer in `/admin/answers` → the next visitor asking semantically close questions gets the curated answer, not a paraphrase of marketing copy. See `ADMIN_PANEL.md` → Curated Answers for the workflow.
@@ -258,7 +258,7 @@ Prompt changes go through code review the same as any other change.
 
 ---
 
-## Evals (Phase 3)
+## Evals (M6)
 
 Golden conversations live in `tests/evals/`. Each golden has:
 

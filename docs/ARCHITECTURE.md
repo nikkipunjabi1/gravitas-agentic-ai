@@ -139,7 +139,7 @@ gravitas-agentic-ai/
 | Hosting (production) | **Railway** — one project hosts Next.js + crawl worker + Chroma | App, worker, vector store, and cron all in one project with private networking. See "Deployment paths". Vercel + Fly.io is the documented alternative. |
 | Hosting (dev/demo) | Self-hosted on the developer's Windows + WSL2 box | Cloudflare Tunnel exposes it as `copilot.thisisgravitas.com`. See "Deployment paths" → Path A. |
 | DNS / proxy / tunnel | Cloudflare (free tier) | DNS, SSL, DDoS protection, Tunnel for home-hosted Ollama. Free is sufficient — no paid plan needed. |
-| Observability | Vercel logs + Supabase logs + (later) OpenTelemetry + Langfuse | Phase 2+ for tracing |
+| Observability | Railway logs + Supabase logs + (M6) OpenTelemetry + Langfuse | Production tracing in M6 |
 
 ## Environment variables
 
@@ -164,7 +164,7 @@ CRAWL_WORKER_SHARED_SECRET=
 
 # KB ingest
 GRAVITAS_SITEMAP_URL=https://thisisgravitas.com/sitemap.xml
-KB_REFRESH_CRON=0 4 * * *           # daily at 04:00 UTC, Phase 2+
+KB_REFRESH_CRON=0 4 * * *           # daily at 04:00 UTC, running from M2
 
 # Supabase
 SUPABASE_URL=
@@ -246,11 +246,12 @@ Lives in `worker/src/kb-ingest.ts` — same Node service that handles visitor UR
 
 ### Cadence
 
-| Phase | Refresh strategy |
+| Milestone | Refresh strategy |
 |---|---|
-| Phase 1 (MVP) | Initial seed via `pnpm kb:reseed`, **plus** daily incremental cron (Vercel Cron or equivalent hits `worker/kb/refresh` at 04:00 UTC). Sitemap-driven; only re-embeds pages whose `lastmod` or content hash changed. |
-| Phase 2 | Same pipeline; the Strategy node starts consuming the KB for grounding and citations. |
-| Phase 3 | Add CMS webhook if Gravitas's CMS supports it — real-time index updates on publish. |
+| M2 | Initial seed via `pnpm kb:reseed`, **plus** daily incremental cron (Railway Cron or equivalent hits `worker/kb/refresh` at 04:00 UTC). Sitemap-driven; only re-embeds pages whose `lastmod` or content hash changed. Discovery answers `gravitas-question` from this collection. |
+| M3 | Same pipeline; the Strategy node starts consuming the KB for grounding and citations. |
+| M4 | Second collection added: `gravitas-curated` (admin-authored via `/admin/answers`). `kb_search` becomes hybrid across both collections. |
+| Backlog | CMS webhook for real-time index updates on publish. |
 
 ### Manual reseed
 
@@ -263,7 +264,7 @@ Lives in `worker/src/kb-ingest.ts` — same Node service that handles visitor UR
 
 ### Sanity checks
 
-The ingest job emits metrics every run: pages crawled, pages skipped (unchanged), chunks embedded, errors. A run that crawls zero pages OR errors on > 10% of pages alerts (Phase 2+).
+The ingest job emits metrics every run: pages crawled, pages skipped (unchanged), chunks embedded, errors. A run that crawls zero pages OR errors on > 10% of pages alerts via the M6 alert pipeline.
 
 ## Cost cap — daily Claude spend ceiling
 
@@ -313,7 +314,7 @@ The graph has a **single fallback edge** from every node to a terminal `CapReach
 - On submit, writes a row to the Supabase `waitlist` table with `email`, `captured_at`, `session_id`, `intended_url`, `source: "daily_cap"`
 - Ends the session
 
-Phase 1 only captures the email. Phase 2 sends a "we're back" email the next day (Resend or Supabase Auth's transactional email).
+M2 only captures the email. M4 adds the "send 'we're back' email" gated action in `/admin/waitlist` (via Resend or Supabase Auth's transactional email).
 
 ### Storage
 
@@ -330,7 +331,7 @@ Only Anthropic API calls count.
 
 ### Observability
 
-The ledger doubles as a metric source. A small `/api/admin/cost` route (auth-gated, Phase 2) exposes today's row and a 30-day history for dashboarding. If `calls_blocked > 0` for the day, that's a signal we either need to raise the cap or get smarter about prompt length.
+The ledger doubles as a metric source. A small `/api/admin/cost` route (auth-gated, M4) exposes today's row and a 30-day history for dashboarding. If `calls_blocked > 0` for the day, that's a signal we either need to raise the cap or get smarter about prompt length.
 
 ## Admin panel
 
@@ -352,7 +353,7 @@ Added on top of `cost_ledger` / `waitlist` / `kb_documents`:
 - `messages` — every visitor/agent turn, ordered, tagged with emitting node
 - `model_calls` — every Anthropic + Ollama call routed through the model router (tokens, cost, latency, `was_blocked`)
 - `ui_actions_emitted` — every UIAction with payload (for replay)
-- `tool_calls` *(Phase 2)* — every tool invocation with redacted args/result summary
+- `tool_calls` *(M4)* — every tool invocation with redacted args/result summary
 
 Schemas live in `docs/ADMIN_PANEL.md` so they're co-located with the views that read them.
 
@@ -510,7 +511,7 @@ External:
 | ChromaDB | **Railway service** with persistent volume | Covered |
 | Cron — KB refresh | **Railway cron service** OR `railway.cron` config | Covered |
 | Railway subscription + usage | $5/mo subscription + $10/mo included credits + pay-as-you-go | Likely **$5–15/mo** for moderate traffic |
-| Supabase | Free tier | $0 — upgrade to Pro ($25/mo) only when limits hit (Phase 2+) |
+| Supabase | Free tier | $0 — upgrade to Pro ($25/mo) only when limits hit |
 | Ollama | **Home Windows box** via Cloudflare Tunnel | $0 — you already have it on |
 | Cloudflare (DNS, proxy, Tunnel, SSL) | Free tier | $0 — sufficient, no upgrade needed |
 | Claude API | Anthropic | $50/day cap (≤ $1,500/mo absolute worst case) |
@@ -532,11 +533,10 @@ External:
 
 ### Recommendation by phase
 
-| Phase | Recommended path | Rationale |
+| Milestone | Recommended path | Rationale |
 |---|---|---|
-| Phase 0–1 (build + internal demo) | **Path A** (self-host on Windows box) | Free, fast, the box is already set up |
-| Phase 2 (soft-launch on a staging subdomain) | **Path A** behind Cloudflare Tunnel, with monitoring | Still free; observe real traffic patterns before paying |
-| Phase 3 (production on thisisgravitas.com) | **Path C — Railway** | Single project hosts app + worker + Chroma; covered by the existing paid Railway account |
+| M1–M5 (build + internal demo) | **Path A** (self-host on Windows box) | Free, fast, the box is already set up; Cloudflare Tunnel exposes it for stakeholder previews |
+| M6 (production cutover on thisisgravitas.com) | **Path C — Railway** | Single project hosts app + worker + Chroma + cron; covered by the existing paid Railway account |
 
 ### What we are NOT trying to make free
 
@@ -675,5 +675,5 @@ Coordinate with whoever owns the marketing-site infrastructure before going live
 
 - Multi-region deployment (single region is fine until traffic forces it)
 - A real queue between the app and the worker (HTTP is fine; add a queue when crawl latency or worker failures justify it)
-- Custom auth (Supabase Auth handles everything we need for Phase 2)
-- Self-hosted vector store at scale (Chroma local is fine through Phase 2)
+- Custom auth (Supabase Auth handles everything we need for Phase 1)
+- Self-hosted vector store at scale (Chroma local is fine throughout Phase 1)

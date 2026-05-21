@@ -1,139 +1,221 @@
 # Roadmap
 
-Phased delivery. Claude Code does not start a phase until the previous one's Definition of Done is signed off.
+**One phase. Six milestones. The full Gravitas Transformation Co-Pilot ships at the end of Phase 1.**
 
-The currently active phase is marked **IN PROGRESS**.
+Milestones within Phase 1 are **internal checkpoints** — verify-and-continue, NOT approval gates. Claude Code completes each milestone (working end-to-end, demo-able, all tests green) before moving on to the next. No user sign-off required between milestones. The user signs off **once**, when Phase 1 is fully done (M6 complete).
 
 ---
 
-## Phase 0 — Foundation **IN PROGRESS**
+## Phase 1 — Gravitas Transformation Co-Pilot
 
-Scaffolding and shared infrastructure. No agent intelligence yet — wire it up end-to-end so each subsequent piece slots in.
+Full scope. No deferral. Six internal milestones (M1–M6) provide build cadence — they prevent the "3-month black box with nothing demo-able" failure mode without re-introducing phasing.
+
+---
+
+### M1 — Foundation **IN PROGRESS**
+
+Scaffolding and shared infrastructure. No agent intelligence yet — wire the framework so the rest slots in.
 
 **Deliverables**
 
 - Next.js app scaffolded (App Router, Tailwind, shadcn/ui, TypeScript strict)
+- Required polish stack installed and wired: Framer Motion + GSAP + Lenis + next-themes + Vaul + Sonner; Aceternity UI patterns folder seeded with at least `AuroraBackground` and `MovingBorder`
+- Dark-mode-only theme provider; brand colour tokens in `tailwind.config.ts` per `docs/BRANDING.md`
+- `next/font` configured with `Inter` as the temporary brand-font fallback
 - `/copilot` route with the empty dual-pane layout (left: chat shell, right: canvas shell)
+- Lenis smooth scroll mounted at root
 - Streaming chat endpoint that echoes the user message back via the Vercel AI SDK
-- Model router (`src/lib/models/`) with two providers wired and smoke-tested:
-  - Ollama (DeepSeek-R1 or Qwen3) — local
-  - Anthropic Claude Sonnet 4.6 — via API key in `.env.local`
+- Model router (`src/lib/models/`) with two providers wired and smoke-tested: Ollama and Anthropic
 - Crawl worker scaffold (`worker/`) — accepts a URL, returns a stub JSON payload
+- Logo fetch script (`pnpm branding:fetch`) populates `src/lib/branding/logo.ts` with the base64 data URI
 - `UIAction` zod schema defined per `docs/UI_CONTRACT.md`, plus one trivial test component (`<DebugAction>`) that renders the payload as JSON
+- Widget launcher skeleton (`public/widget.js`) — renders the launcher pill, opens an empty takeover iframe; postMessage round-trip works
 - `.env.example` enumerating every required variable
-- README + CLAUDE.md commands section filled in
-- Lint, typecheck, and a smoke Playwright test pass in CI
+- Lint, typecheck, smoke Playwright test pass in CI (GitHub Actions)
 
-**Definition of Done**
+**Demo-able state**
 
-- `pnpm dev` boots the app, `pnpm dev:worker` boots the crawl worker
+- `pnpm dev` boots the Next.js app; `pnpm dev:worker` boots the crawl worker
 - User types into chat → message round-trips through the model router → response streams back
 - Sending the keyword `debug` from the agent emits a `UIAction` that renders in the canvas
+- Widget launcher on a test HTML page opens the takeover iframe correctly
 - All `pnpm lint && pnpm typecheck && pnpm test && pnpm e2e` green
 
 ---
 
-## Phase 1 — MVP: AI Experience Auditor
+### M2 — Auditor + KB ingest + Cost cap + Rate limit + Minimal admin
 
-The "wow" demo. Paste a URL, get a real audit in the canvas, in under 30 seconds.
+The first end-to-end "wow" demo: visitor pastes a URL → audit appears in the canvas in < 30s. All the operational guards in place from day one.
 
-**Scope**
+**Deliverables**
 
-- **Discovery (lightweight):** one or two questions to capture industry + role + the named problem
+- **Discovery (lightweight):** one or two questions to capture industry + role + named problem (single-pass; multi-turn refinement is M3)
 - **URL audit (one page, exactly):**
-  - Worker runs Playwright + Lighthouse + Cheerio against **only** the URL the visitor submitted — no link-following, no sibling-page crawling
-  - Extracts: page speed (LCP/FCP/TTFB/CLS), accessibility (contrast, touch targets, alt text, ARIA), content architecture signals, design consistency signals (button variants, spacing, icon sizes), AI-readiness signals (structured data, semantic markup, indexability), mobile experience signals
-- **Canvas components rendered as findings arrive, mapped to the Four-Lens framework (see `docs/BRANDING.md`):**
-  1. `AuditFindings` — findings tagged with `lens` (usability / user-needs / conversion / design-execution) and severity
-  2. `MaturityChart` — 4-axis radar (D1 Usability Standards / D2 User Needs / D3 Conversion / D4 Design Execution), each with raw + normalized scores; total /100 with optional post-engagement target
-  3. `RoadmapWidget` — `mode: "priority"` with Must / Should / Could grouping
-  4. `KeepAndBuildOn` — positive findings, rendered before critique (Gravitas methodology)
-  5. `ThemesGrid` — 4–6 cross-cutting themes that span lenses
-- **Solution mapping:** each finding tagged with the Gravitas service it maps to
-- **Hybrid model routing:** DeepSeek-R1 for reasoning over the audit JSON; Claude Sonnet for the user-facing narration in chat and the copy inside each canvas component
-- **Daily cost cap ($50 default) with graceful degradation:** centralized in `src/lib/models/router.ts`. Every Claude call is tagged `voice-light` or `voice-heavy`. Pre-flight estimate against the Supabase `cost_ledger` table; reconciles actuals after each call. When cap is hit: `voice-heavy` throws `DailyCapExceeded` → graph routes to `CapReached` terminal node → `DailyCapReached` UIAction + waitlist email capture. `voice-light` silently swaps to Ollama (Qwen3) so KB-grounded answers keep working — site never goes fully dark. Email *sending* is deferred to Phase 2; Phase 1 only captures.
-- **Per-IP rate limiting:** independent of the cost cap. Defaults: 20 chat turns / IP / day, 1 URL audit / IP / day (via `IP_DAILY_TURN_LIMIT` and `IP_DAILY_AUDIT_LIMIT`). `src/lib/quota/ip-quota.ts` enforces in `/api/chat` before the agent runs and in the Audit node before crawl. Quota counter visible in UI only when ≤ `COUNTER_VISIBLE_THRESHOLD` (default 5) turns remain. Exhaustion → `RateLimitReached` UIAction. IP stored only as `sha256(ip + SESSION_SIGNING_SECRET)` in the `ip_quota` table.
-- **Branding embedded:** `pnpm branding:fetch` runs once at scaffold, downloads the Gravitas logo SVG, embeds it as a base64 data URI in `src/lib/branding/logo.ts`. Every canvas component, the audit report, and the daily-cap card display the logo. No runtime fetch from the asset host.
-- **Audit report follows the Gravitas template** (`docs/BRANDING.md`): Four-Lens framework, scoring rubric (raw + normalized), Keep & Build On positive framing before critique, Must/Should/Could prioritisation, calibrated scoring (most pages should land "Developing"), the "About this audit" honesty footer that distinguishes the auto-audit from a full Gravitas engagement, bilingual "Shukran! / شكراً" closing with the named contact from `BRANDING_CLOSING_CONTACT_*` env vars. Phase 1 = canvas-rendered sections only. PDF generation = Phase 3.
-- **Admin panel (minimal):** `/admin/*` routes behind Supabase magic-link auth restricted to `@thisisgravitas.com`. Phase 1 includes: Dashboard tile-strip (today's spend, sessions, blocked calls, leads, health dots), Sessions table with filters, Session detail with full transcript + inline model/tool/UIAction events, Visitor queries raw list, Health page. Tremor for tiles/sparkline. **Read-only.** Logging chokepoints in `src/lib/models/router.ts` and `src/lib/stream/ui-action.ts` populate `sessions`, `messages`, `model_calls`, `ui_actions_emitted`. Nightly retention cron deletes rows older than `SESSION_RETENTION_DAYS` (default 90). See `docs/ADMIN_PANEL.md` for full spec.
-- **Marketing-site embedding:** the Co-Pilot ships as a floating launcher pill on `thisisgravitas.com` that opens the experience as a full-screen takeover iframe. One-line integration on the marketing site (`<script src="https://ai.thisisgravitas.com/widget.js" defer>`), all delivery from the subdomain. Launcher script < 5KB gzipped, vanilla TS in a Shadow DOM root, zero external deps. Embed-mode route `/copilot?embed=takeover` renders edge-to-edge with an "Open in new tab" affordance to the canonical URL. Typed origin-verified `postMessage` bridge (`src/widget/protocol.ts`) handles open/close/telemetry. See `docs/ARCHITECTURE.md` → Embedding on thisisgravitas.com.
+  - Worker runs Playwright + Lighthouse + Cheerio against the URL the visitor submitted — no link-following
+  - Extracts: page speed (LCP/FCP/TTFB/CLS), accessibility, content architecture, design consistency, AI-readiness, mobile experience
+- **Five canvas components**, mapped to the Four-Lens framework (see `docs/BRANDING.md`):
+  1. `AuditFindings` — findings tagged with `lens` and severity
+  2. `MaturityChart` — 4-axis radar with raw + normalized scores, total /100
+  3. `RoadmapWidget` — `mode: "priority"` Must / Should / Could grouping
+  4. `KeepAndBuildOn` — positive findings, rendered before critique
+  5. `ThemesGrid` — 4–6 cross-cutting themes
+- **Hybrid model routing:** DeepSeek-R1 (Ollama) for reasoning over the audit JSON; Claude Sonnet for `voice-light` and `voice-heavy` narration
+- **Daily cost cap ($50 default) with graceful degradation:** centralized in `src/lib/models/router.ts`. `voice-heavy` throws `DailyCapExceeded` → `CapReached` terminal node → `DailyCapReached` UIAction + waitlist email capture. `voice-light` silently swaps to Ollama (Qwen3) — lite mode. Site never goes fully dark.
+- **Per-IP rate limiting:** 20 chat turns + 1 audit / IP / day (env-configurable). UI counter visible when ≤ 5 turns remain. Exhaustion → `RateLimitReached` UIAction. IP stored only as `sha256(ip + SESSION_SIGNING_SECRET)`.
+- **Branding embedded:** logo data URI from M1 is referenced by every canvas component, the audit report sections, the daily-cap card, and the rate-limit card. No runtime fetch from the asset host.
+- **Audit report follows the Gravitas template** (`docs/BRANDING.md`): Four-Lens framework, scoring rubric, Keep & Build On before critique, Must/Should/Could prioritisation, calibrated scoring (most pages should land "Developing"), the "About this audit" honesty footer, bilingual "Shukran! / شكراً" closing with named contact from `BRANDING_CLOSING_CONTACT_*` env vars. Canvas-rendered sections only — PDF generation is M5.
+- **Minimal admin panel** at `/admin/*` behind Supabase magic-link auth restricted to `@thisisgravitas.com`:
+  - Dashboard tile-strip (today's spend, sessions, blocked calls, lite-mode answers, rate-limited IPs, leads, health dots)
+  - Sessions table with filters
+  - Session detail with full transcript + inline model/tool/UIAction events
+  - Visitor queries raw list
+  - Health page
+  - **Read-only** in M2. Gated write actions arrive in M4.
+- **Logging chokepoints** populated by `src/lib/models/router.ts` and `src/lib/stream/ui-action.ts`: `sessions`, `messages`, `model_calls`, `ui_actions_emitted`. Nightly retention cron deletes rows older than `SESSION_RETENTION_DAYS` (90 default).
+- **Marketing-site embedding:** the launcher pill on thisisgravitas.com opens the full-screen takeover iframe. Launcher script < 5KB gzipped, vanilla TS in Shadow DOM, zero deps. Typed origin-verified postMessage bridge.
+- **Gravitas KB ingest pipeline:**
+  - Initial seed via `pnpm kb:reseed` of the whitelist (`/`, `/about`, `/services/*`, `/work/*`, `/insights/*`) into the ChromaDB `gravitas-kb` collection
+  - **Scheduled daily incremental refresh** — Railway Cron (or `node-cron` in dev) hits `worker/kb/refresh` at 04:00 UTC. Sitemap-diffed, content-hashed; only changed pages re-embed.
+  - Discovery answers `gravitas-question` intent from this KB starting day one
+  - `pnpm kb:reseed` available for forced full re-crawl
 
-- **Gravitas KB ingest pipeline (Phase 1):**
-  - Initial seed via `pnpm kb:reseed` of the whitelist (`/`, `/about`, `/services/*`, `/work/*`, `/insights/*`) into the ChromaDB `gravitas-kb` collection.
-  - **Scheduled daily incremental refresh** — Railway Cron (or equivalent in dev: a node-cron service in the same Next.js process) hits `worker/kb/refresh` at 04:00 UTC. Job fetches `sitemap.xml`, diffs `lastmod` + content hash against the `kb_documents` table in Supabase, re-embeds **only changed pages**.
-  - Discovery answers `gravitas-question` intent from this KB starting day one.
-  - `pnpm kb:reseed` remains available for forced full re-crawl after embedding-model or schema changes.
+**Demo-able state**
 
-**Out of scope (deferred to Phase 2)**
-
-- Multi-turn discovery beyond the opening questions
-- Executive brief PDF
-- Lead capture form
-- Persistent sessions
-
-**Definition of Done**
-
-- A first-time visitor with no instructions can: paste a URL, watch the canvas populate, and end the session understanding what's wrong and what Gravitas would do
-- Median time from URL submission to first canvas render: ≤ 8 seconds
-- Median audit completion: ≤ 30 seconds
-- Three Gravitas strategists review three real sessions each and rate the agent's analysis ≥ 4/5 on accuracy and ≥ 4/5 on voice
-- **Cost cap proof (heavy):** a simulated "spend $49.50 of $50" test triggers `DailyCapReached` on the next `voice-heavy` request; the waitlist row is written; no further Anthropic calls are made for heavy purposes until the next reset
-- **Lite-mode proof (light):** with the cap exceeded, a visitor asking "what does Gravitas do?" still gets a KB-grounded answer; the `model_calls` row shows `provider = ollama`, `purpose = voice-light-degraded`; the admin dashboard shows `lite_mode_substitutions > 0`
-- **Rate-limit proof:** the 21st turn from a single IP returns `RateLimitReached`; the 2nd audit from the same IP same day returns `RateLimitReached` with `reason = "audits"`; counter appears in UI when 5 turns remain
-- **Branding proof:** the Gravitas logo renders on every canvas surface and in the daily-cap card, sourced exclusively from `GRAVITAS_LOGO_DATA_URI`; blocking outbound traffic to `assets.thisisgravitas.com` at test time does not affect rendering
-- **Admin panel proof:** a `@thisisgravitas.com` user signs in via magic link and sees today's session in the dashboard within 30s of it ending; a non-Gravitas email is refused at the database trigger; the simulated cap-hit session shows `was_blocked = true` in the `/admin/sessions/[id]` model-call list
-- **Embedding proof:** a test HTML page with `<script src="https://ai.thisisgravitas.com/widget.js" defer>` renders the launcher pill in < 100ms after page load; clicking it opens the full-screen takeover with `ready` postMessage received within 1s; ESC + X both close cleanly via `close` postMessage; `widget.js` is ≤ 5KB gzipped and ships zero CSS leaks (verified by rendering inside a styled parent page); `event.origin` mismatches are dropped (verified by sending a forged postMessage from a malicious origin in a test)
+- A first-time visitor pastes a URL, watches the canvas populate, and ends the session understanding what's wrong and what Gravitas would do
+- Median time from URL submission to first canvas render: ≤ 8s
+- Median audit completion: ≤ 30s
+- Three Gravitas strategists review three real sessions each, rate ≥ 4/5 on accuracy and ≥ 4/5 on voice
+- **Cost cap proof (heavy):** simulated "spend $49.50 of $50" → next `voice-heavy` request returns `DailyCapReached`, waitlist row written, no further Anthropic heavy calls until reset
+- **Lite-mode proof (light):** with cap exceeded, "what does Gravitas do?" returns a KB-grounded answer; `model_calls` shows `provider=ollama`, `purpose=voice-light-degraded`; admin dashboard `lite_mode_substitutions > 0`
+- **Rate-limit proof:** 21st turn from one IP → `RateLimitReached`; 2nd audit from same IP same day → `RateLimitReached` `reason="audits"`; counter visible at 5 remaining
+- **Branding proof:** logo renders on every canvas surface from `GRAVITAS_LOGO_DATA_URI`; blocking `assets.thisisgravitas.com` at test time does not affect rendering
+- **Admin proof:** `@thisisgravitas.com` user signs in via magic link and sees today's session within 30s of completion; non-Gravitas email refused at the DB trigger; cap-hit session shows `was_blocked=true`
+- **Embedding proof:** test HTML page with the widget script renders the launcher pill in < 100ms; click opens takeover with `ready` postMessage within 1s; ESC + X close via `close` postMessage; widget.js ≤ 5KB gzipped, zero CSS leaks; forged origins dropped
 
 ---
 
-## Phase 2 — Multi-agent Transformation Co-Pilot
+### M3 — Full multi-agent graph + Strategy grounding + Persistent sessions
 
-Move from one-shot audit to genuine multi-agent reasoning.
+Move from one-shot audit to genuine multi-agent reasoning. The graph nodes shift from sequential pass-through to properly orchestrated state.
 
-**Scope**
+**Deliverables**
 
-- Full LangGraph state machine with five nodes: Discovery, Audit, Strategy, Solution Mapping, Output (see `docs/AGENTS.md`)
-- Discovery agent properly sequences follow-ups based on the visitor's answers
-- Strategy agent generates a roadmap that synthesizes Discovery + Audit
+- Full LangGraph state machine with five nodes (see `docs/AGENTS.md`): Discovery, Audit, Strategy, Solution Mapping, Output — plus the global fallback edge to `CapReached`
+- Discovery agent properly sequences follow-ups based on the visitor's answers (multi-turn, intent-routed)
+- Strategy agent generates a roadmap that synthesizes Discovery + Audit, grounded in the Gravitas KB; cites case studies (e.g. ADCB AI Knowledge Base) when relevant
+- Solution Mapping produces visitor-phrase → Gravitas-service mappings with rationale
 - Three additional canvas components:
-  4. `SolutionMap` — visitor problems linked to Gravitas services with rationale
-  5. `TechStackReco` — when the conversation surfaces tech debt or modernization
-  6. `LeadGenForm` — typed schema, posts to Supabase
-- Persistent session (Supabase) so a visitor returning within 24h can resume
-- Strategy agent grounds recommendations in the KB; cites case studies (e.g. ADCB AI Knowledge Base) when relevant. (KB refresh pipeline itself lives in Phase 1; Phase 2 just leans on it from a new node.)
-- **Admin panel (full):** Usage & Cost charts (daily spend, by model, by purpose, by node, per-session histogram, top expensive sessions); KB panel with run history; Waitlist management; topic clustering of visitor queries (Ollama-powered nightly job); CSV export; gated actions (manual KB reseed, raise cap for the day, send "we're back" email)
-- **Curated Answers — admin-authored knowledge layered on the auto-crawled KB:** new admin route `/admin/answers` with full CRUD editor (title, Markdown body, tags, optional exact-match trigger phrases, weight 1.0–5.0, status). Save → embeds via Ollama → upserts to a separate `gravitas-curated` Chroma collection. The agent's `kb_search` tool becomes hybrid — queries both `gravitas-kb` and `gravitas-curated`, merges, applies each curated answer's weight (default 1.5×). High-value workflow: from `/admin/queries` topic clusters, "Create curated answer for this topic" pre-fills the editor with the topic label and sample messages. See `docs/ADMIN_PANEL.md` → Curated Answers.
+  6. `SolutionMap` — visitor problems linked to Gravitas services with rationale and optional case-study reference
+  7. `TechStackReco` — when the conversation surfaces tech debt or modernization
+  8. `LeadGenForm` — typed schema, posts to Supabase
+- Persistent sessions in Supabase: visitor returning within 24h can resume
 
-**Definition of Done**
+**Demo-able state**
 
-- A session can run end-to-end without a URL (pure-discovery mode) and still produce a credible roadmap
+- A session can run end-to-end **without** a URL (pure-discovery mode) and still produce a credible roadmap
 - The Strategy agent cites at least one Gravitas case study or service when relevant
-- ≥ 5% of completed sessions submit the lead form
+- ≥ 5% of completed sessions submit the `LeadGenForm`
 
 ---
 
-## Phase 3 — Autonomous Co-Pilot + Industry modes
+### M4 — Curated Answers + Full Admin Panel
 
-Push the agent into genuine autonomy, with guardrails.
+Admin can author canonical knowledge; hybrid `kb_search` blends auto-crawled and curated. Full admin panel with charts, KB controls, and gated write actions.
 
-**Scope**
+**Deliverables**
 
-- `ExecutiveBriefDownload` — agent generates a **6–10 page PDF audit report** following the full Gravitas template from `docs/BRANDING.md` (Cover, The Brief, Four Lenses, Executive Summary, Keep & Build On, four lens deep-dives, Cross-Cutting Themes, Must/Should/Could recommendations, Technical Health, Solution Mapping, Suggested Next Step, "About this audit" honesty block, "Shukran!" closing). Includes an annotated screenshot of the audited page captured by the crawl worker. PDF generator at `src/server/pdf/audit-report.ts`.
-- Industry-specific modes (Banking, Government, Retail, Healthcare) — each tunes Discovery questions and Solution Map language
-- Optional: live website re-analysis when the visitor mentions a different page
-- Reviewer queue: Gravitas team can sample sessions and flag bad outputs; flags feed eval set
-- Eval harness (golden conversations + LLM-as-judge) to catch regressions
-- **Admin panel — alerts and digests:** Slack/email when blocked calls > 0, when daily spend > 80% of cap, or when KB ingest fails; daily digest email summarizing the previous day; eval-results panel
+- **Curated Answers** — see `docs/ADMIN_PANEL.md` for full spec:
+  - `/admin/answers` CRUD editor (Markdown body, tags, trigger phrases, weight 1.0–5.0, status)
+  - `curated_answers` table in Supabase
+  - `gravitas-curated` Chroma collection (separate from `gravitas-kb`)
+  - On save: row written → Ollama embeds → upserts to Chroma → "indexed at HH:MM" indicator
+  - **Hybrid `kb_search`** queries both collections, merges, applies the per-row weight multiplier; trigger phrases override
+- **Full Admin Panel:**
+  - `/admin/cost` — daily spend charts; by model / purpose / agent node; per-session cost histogram; top 10 expensive sessions
+  - `/admin/kb` — last ingest run, 30-day history, index size, recent crawl errors; gated "reseed now" button
+  - `/admin/waitlist` — captured cap-reached emails with status; gated "send 'we're back' email" button (requires email infra — Resend or Supabase Auth transactional)
+  - `/admin/queries` (upgrade) — topic clusters from a nightly Ollama job; "Create curated answer for this topic" button pre-fills the editor
+  - `/admin/settings` — cap value override (gated, time-limited), retention, alert recipients
+  - CSV export across tables
+  - Session replay (re-emit UIActions into an embedded canvas)
+- `tool_calls` Supabase table populated by the tool wrappers
+- Role split: `viewer` vs `admin` for gated write actions
 
-**Definition of Done**
+**Demo-able state**
 
-- A visitor can request the PDF and receive it within 60s
+- Admin writes a curated answer; visitor asks a semantically close question within minutes; the agent's response cites the curated content; the session transcript marks the assistant message with "via curated answer: [title]"
+- Admin dashboard shows the full set of charts; clicking through a topic cluster reveals the sessions in that cluster
+- A "send 'we're back' email" trigger from `/admin/waitlist` delivers the email and updates the `notified_at` timestamp
+- Gated KB reseed runs successfully and is logged
+
+---
+
+### M5 — Executive Brief PDF + Industry modes
+
+The deliverable artifact (PDF) and audience-specific tuning.
+
+**Deliverables**
+
+- **`ExecutiveBriefDownload` PDF** — a 6–10 page audit report following the full Gravitas template from `docs/BRANDING.md`:
+  - Cover, The Brief, Four Lenses, Executive Summary
+  - Keep & Build On, four lens deep-dives, Cross-Cutting Themes
+  - Must/Should/Could recommendations
+  - Technical Health
+  - Solution Mapping
+  - Suggested Next Step
+  - "About this audit" honesty block
+  - "Shukran!" closing with named contact
+  - Includes an annotated screenshot of the audited page (captured by the crawl worker at mobile + desktop viewports)
+- PDF generator at `src/server/pdf/audit-report.ts` (e.g. via React-PDF or Puppeteer)
+- **Industry-specific modes** (Banking, Government, Retail, Healthcare) — each tunes Discovery questions and Solution Map language. Auto-detected from the visitor's first message; manual override possible
+- Optional: live website re-analysis when the visitor mentions a different page (still capped at `IP_DAILY_AUDIT_LIMIT`)
+
+**Demo-able state**
+
+- A visitor completes a session and requests the PDF; it's delivered within 60s, signed URL valid for 7 days
 - Industry mode is auto-detected from the visitor's first message ≥ 70% of the time
-- A weekly eval run catches any regression > 5% on the golden set
+- Each industry mode's Solution Map language is verifiably different (e.g. Banking surfaces "compliance" and "regulator" framing; Government surfaces "service delivery" framing)
 
 ---
 
-## Backlog (not scheduled)
+### M6 — Evals + Alerts + Production cutover
+
+Quality discipline + ship.
+
+**Deliverables**
+
+- **Eval harness** at `tests/evals/`:
+  - Golden conversations (input opener + optional URL, expected nodes fired, expected `UIAction` types emitted)
+  - LLM-as-judge using Claude Sonnet as judge against the Gravitas voice rubric
+  - Runs weekly via Railway Cron; fails the run if pass rate drops > 5% week-over-week
+- **Reviewer queue** in admin: Gravitas team can sample sessions, flag bad outputs; flags feed the eval set
+- **Alerts** — Slack webhook + email when:
+  - `calls_blocked > 0` for the day
+  - daily spend > 80% of cap
+  - KB ingest fails (zero pages crawled OR > 10% error rate)
+  - Eval pass rate drops > 5% week-over-week
+- **Daily digest email** summarizing the previous day (sessions, spend, top topics, blocked calls, KB freshness)
+- **Production cutover** from Path A (home Windows box via Cloudflare Tunnel) to Path C (Railway):
+  - Four Railway services (next-app, crawl, chroma, cron) with private networking
+  - ChromaDB persistent volume attached
+  - Custom domain `ai.thisisgravitas.com` configured with Cloudflare DNS
+  - Ollama remains on the home box via Cloudflare Tunnel — Railway services call it through the tunnel
+  - `<script src="https://ai.thisisgravitas.com/widget.js" defer></script>` added to thisisgravitas.com by the marketing-site team (with their CSP updated for `script-src` and `frame-src`)
+  - All env vars migrated to Railway environment variable groups
+  - Eval suite passes on staging before the DNS cutover
+
+**Demo-able state**
+
+- A weekly eval run catches any regression > 5% on the golden set
+- A test "spend > 80%" event triggers the Slack + email alert within 60s
+- Production is live at `ai.thisisgravitas.com`, embedded on thisisgravitas.com, end-to-end working
+- Daily digest email lands at the configured recipients at 09:00 UTC
+
+---
+
+## Backlog (post-Phase 1)
+
+Not part of the Phase 1 build. Captured here so we don't forget. Promote any of these to a future Phase 2 if/when it's prioritized.
 
 - Multilingual (Arabic priority given Gravitas's Gulf client base)
 - Voice input
@@ -141,11 +223,19 @@ Push the agent into genuine autonomy, with guardrails.
 - A/B test of canvas-first vs. chat-first openings
 - CRM integration (HubSpot / Salesforce)
 - Authenticated dashboards for returning enterprise leads
-- Proposal generation (gated by a human reviewer regardless of phase)
+- Proposal generation (gated by a human reviewer regardless)
+- CMS webhook for real-time KB updates (replaces the daily cron)
+- Light mode
+- Real-time admin view of an active session (websocket)
+- `curated_answer_versions` append-only history table (time-travel queries)
 
-## Success metrics (tracked from Phase 1 onwards)
+---
 
-| Metric | Target by end of Phase 2 |
+## Success metrics
+
+Tracked from production traffic (M6 onwards). Surfaced on the `/admin/cost` page and in the daily digest.
+
+| Metric | Target |
 |---|---|
 | Session reaches canvas | ≥ 40% |
 | Audit flow completes | ≥ 15% |
@@ -153,7 +243,14 @@ Push the agent into genuine autonomy, with guardrails.
 | Median session length | ≥ 3 min |
 | Time to first canvas render | < 8s |
 | Strategist voice rating (sampled) | ≥ 4/5 |
+| Eval pass rate (weekly) | ≥ 95% |
 
-## How phases are signed off
+---
 
-The user (Nikki) explicitly confirms a phase is done. Claude Code does not self-promote a phase.
+## How milestones are verified
+
+Claude Code completes each milestone with its **Demo-able state** satisfied — working end-to-end, all tests green — then continues to the next. No user sign-off required between milestones. Claude reports completion and proceeds.
+
+The user signs off **once**, at the end of M6, when Phase 1 is fully done and production is live.
+
+If Claude Code encounters a blocker that genuinely requires a decision (a third-party service unavailable, an architectural ambiguity not resolved in the docs, a credential the user must provide), it stops and asks. Otherwise: complete the milestone, verify, continue.
