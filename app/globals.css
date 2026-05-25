@@ -1,0 +1,128 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------
+   Gravitas — global tokens
+
+   See docs/BRANDING.md → Colour, typography, spacing.
+   These vars are picked up by the Tailwind theme (var(--font-*))
+   and a small set of global utilities below.
+   ------------------------------------------------------------------ */
+
+:root {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-sans);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-paper: 250 250 247;   /* #FAFAF7 */
+  --color-ink: 11 11 15;         /* #0B0B0F */
+}
+
+html,
+body {
+  background: rgb(var(--color-paper));
+  color: rgb(var(--color-ink));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Reserved canvas-enter animation utility — components can compose with
+   Framer Motion's `canvasEnter` variant. CSS fallback for SSR. */
+.canvas-enter {
+  animation: canvasEnter 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes canvasEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Chat typing-loader (Css-Loader.com style).
+   Used inside the Send button while the assistant turn is in flight —
+   replaces the static "…" so the visitor sees motion, not a frozen dot.
+   Render with: <span class="chat-loader chat-loader--sm" aria-hidden />.
+   Colour is driven by `currentColor` so it inherits from the parent — the
+   button sets text-paper, so the dots are paper-coloured on the ink fill.
+   ------------------------------------------------------------------------- */
+.chat-loader {
+  height: 12px;
+  aspect-ratio: 6;
+  display: flex;
+}
+/* Compact variant sized for the Send button. Same animation, tighter box. */
+.chat-loader--sm {
+  height: 8px;
+}
+.chat-loader::before,
+.chat-loader::after {
+  content: "";
+  flex: 1;
+  padding-left: calc(100% / 6);
+  background:
+    radial-gradient(closest-side at calc(100% / 3) 50%, currentColor 90%, transparent)
+    0 / 75% 100% content-box;
+  animation: chatLoaderL20 2s infinite;
+}
+.chat-loader::after {
+  --_s: -1;
+}
+@keyframes chatLoaderL20 {
+  0% {
+    transform: scale(var(--_s, 1)) translate(0) rotate(0);
+  }
+  25% {
+    transform: scale(var(--_s, 1)) translate(-25%) rotate(0);
+  }
+  50% {
+    transform: scale(var(--_s, 1)) translate(-25%) rotate(1turn);
+  }
+  75%,
+  100% {
+    transform: scale(var(--_s, 1)) translate(0) rotate(1turn);
+  }
+}
+
+/* Respect users who've asked the OS to dial down motion. */
+@media (prefers-reduced-motion: reduce) {
+  .chat-loader::before,
+  .chat-loader::after {
+    animation: none;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Print stylesheet — Phase 1.10 download/share path. Clicking
+   "Print / Save as PDF" in the canvas header opens the browser print
+   dialog. We strip the surrounding shell so only the canvas content +
+   Gravitas footer print.
+   ------------------------------------------------------------------------- */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  [data-print-target="canvas"],
+  [data-print-target="canvas"] * {
+    visibility: visible;
+  }
+  [data-print-target="canvas"] {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: 0;
+    background: #fff !important;
+  }
+  @page {
+    margin: 16mm;
+  }
+}

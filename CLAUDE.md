@@ -103,18 +103,28 @@ The router lives in `src/lib/models/`. **Do not call providers directly from age
 
 ## Commands
 
-To be filled in when the project is scaffolded. Expected:
+Phase 0 scaffolding is in place. The commands below are wired in `package.json` (root) and `worker/package.json`.
 
 ```bash
-pnpm dev          # Next.js dev server
-pnpm dev:worker   # crawl worker
-pnpm test         # unit + integration
-pnpm e2e          # Playwright
-pnpm lint         # eslint + prettier check
-pnpm typecheck    # tsc --noEmit
+# Install once
+pnpm install                  # installs root + worker workspaces
+
+# Dev loops
+pnpm dev                      # Next.js dev server on :3000
+pnpm dev:worker               # crawl worker (Fastify) on :8787
+
+# Quality gates — must all pass before declaring "done"
+pnpm lint                     # eslint (next/core-web-vitals + next/typescript)
+pnpm typecheck                # tsc --noEmit at root + worker
+pnpm test                     # vitest run (unit + integration)
+pnpm e2e                      # Playwright smoke (boots dev server)
+
+# One-off
+pnpm branding:fetch           # downloads Gravitas logo SVG → src/lib/branding/logo.ts
+pnpm kb:reseed                # full re-crawl of the Gravitas KB whitelist (Phase 1+)
 ```
 
-Before declaring a task "done": `pnpm lint && pnpm typecheck && pnpm test` must all pass. UI changes require manual smoke through the dev server (see global rules in the harness about not claiming success without verification).
+Before declaring a task "done": `pnpm lint && pnpm typecheck && pnpm test` must all pass, and any UI change must be smoke-tested manually through `pnpm dev` (see global rules in the harness about not claiming success without verification).
 
 ## Voice (when generating user-facing copy)
 

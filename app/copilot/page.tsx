@@ -1,0 +1,76 @@
+import Link from "next/link";
+import { CopilotShell } from "./copilot-shell";
+import { GravitasMark } from "@/lib/branding/mark";
+
+/**
+ * /copilot — the dual-pane experience.
+ *
+ * Two render modes:
+ *
+ *   - full      (default, `/copilot`)                — header + footer chrome
+ *   - embed     (`/copilot?embed=1`)                 — no chrome; designed for
+ *                                                     embedding in a parent
+ *                                                     site as a chat widget
+ *                                                     via public/embed.js.
+ *
+ * The embed mode is what the floating chat button on thisisgravitas.com
+ * loads as the iframe source. Removing the header/footer + Back link keeps
+ * the iframe content clean.
+ */
+// Force dynamic so searchParams.session always re-renders the page with the
+// fresh value when the URL changes. Without this, Next's static optimisation
+// can serve a cached HTML/RSC payload with a stale `requestedSessionId`,
+// stranding the client component on the wrong chat.
+export const dynamic = "force-dynamic";
+
+export default async function CopilotPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ embed?: string; session?: string }>;
+}) {
+  const params = await searchParams;
+  const isEmbed = params.embed === "1" || params.embed === "true";
+  // Validate at the server boundary — a malformed id never reaches the client
+  // shell. The shell mints a fresh id when this is null.
+  const requestedSessionId =
+    typeof params.session === "string" && isUuidV4(params.session)
+      ? params.session
+      : null;
+
+  if (isEmbed) {
+    return (
+      <main className="flex min-h-screen flex-col bg-paper text-ink">
+        <CopilotShell embed requestedSessionId={requestedSessionId} />
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex min-h-screen flex-col bg-paper text-ink">
+      <header className="flex items-center justify-between border-b border-paper-edge bg-paper/80 px-5 py-3 backdrop-blur">
+        <div className="flex items-center gap-3">
+          <GravitasMark size="md" />
+          <span className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
+            Transformation Co-Pilot
+          </span>
+        </div>
+        <Link
+          href="/"
+          className="rounded-full border border-paper-edge px-3 py-1 text-xs text-ink-soft transition hover:border-ink-muted hover:text-ink"
+        >
+          Back
+        </Link>
+      </header>
+
+      <CopilotShell requestedSessionId={requestedSessionId} />
+
+      <footer className="border-t border-paper-edge px-5 py-2 text-[11px] text-ink-muted">
+        Conversations are logged for quality and to improve recommendations.
+      </footer>
+    </main>
+  );
+}
+
+function isUuidV4(v: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+}
