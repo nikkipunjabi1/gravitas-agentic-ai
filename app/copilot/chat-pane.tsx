@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Message } from "@ai-sdk/react";
 import { cn } from "@/lib/utils/cn";
+import type { RosterEntry } from "@/lib/sessions/roster";
 
 /**
  * ChatPane — chat surface (left pane / full pane when canvas is empty).
@@ -24,6 +25,8 @@ export function ChatPane({
   embed = false,
   resumed = false,
   onStartFresh,
+  recentChats = [],
+  activeSessionId = null,
 }: {
   messages: Message[];
   input: string;
@@ -38,6 +41,10 @@ export function ChatPane({
   resumed?: boolean;
   /** Mint a fresh session id + wipe in-memory chat. */
   onStartFresh?: () => void;
+  /** Roster of prior chats, used by the embed-mode header dropdown. */
+  recentChats?: RosterEntry[];
+  /** Current chat id — used to highlight it in the dropdown. */
+  activeSessionId?: string | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -49,12 +56,28 @@ export function ChatPane({
 
   return (
     <div className={cn("flex flex-col", embed ? "h-screen" : "h-[calc(100vh-7.5rem)] min-h-[28rem]")}>
+      {embed ? (
+        <EmbedHeader
+          recentChats={recentChats}
+          activeSessionId={activeSessionId}
+          onStartFresh={onStartFresh}
+        />
+      ) : null}
       {resumed && messages.length > 0 ? (
-        <ResumeBanner onStartFresh={onStartFresh} />
+        // In embed mode the EmbedHeader already exposes "New chat" — passing
+        // undefined hides the banner's own button so the visitor doesn't see
+        // two near-identical CTAs stacked on top of each other.
+        <ResumeBanner onStartFresh={embed ? undefined : onStartFresh} />
       ) : null}
       <div
         ref={scrollRef}
-        className="flex-1 space-y-4 overflow-y-auto px-5 py-6"
+        className={cn(
+          "flex-1 space-y-4 overflow-y-auto px-5 py-6",
+          // Embed mode: parent iframe overlays an X button at top-right.
+          // Without right padding on the first scroll-row, a long visitor
+          // bubble (max-w 88%) collides with the X.
+          embed && "pr-12",
+        )}
       >
         {messages.length === 0 ? <Opener embed={embed} /> : null}
         {messages.map((m) => (
@@ -129,6 +152,157 @@ export function ChatPane({
       </form>
     </div>
   );
+}
+
+/**
+ * Header bar rendered ONLY in embed mode (inside the iframe widget on
+ * thisisgravitas.com). Two jobs:
+ *
+ *   1. Give the visitor access to their previous conversations — the
+ *      embed widget skips the public landing page (which is where the
+ *      Recent Chats list lives), so without this they have no way back
+ *      to a prior session.
+ *
+ *   2. Reserve a 48-px gutter on the right so embed.js's floating "×"
+ *      button (positioned at top:10px right:10px of the iframe panel)
+ *      doesn't collide with the visitor's first message bubble.
+ *
+ * The dropdown is intentionally small + monochrome — it sits inside a
+ * 420×640 iframe and shouldn't compete for attention with the chat.
+ */
+function EmbedHeader({
+  recentChats,
+  activeSessionId,
+  onStartFresh,
+}: {
+  recentChats: RosterEntry[];
+  activeSessionId: string | null;
+  onStartFresh?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Outside-click closes the dropdown.
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  // Filter the active chat out of the "switch to" list — there's no point
+  // listing the chat you're already in. Newest first; cap at 8 for the
+  // small iframe.
+  const switchable = recentChats
+    .filter((c) => c.id !== activeSessionId)
+    .slice(0, 8);
+
+  return (
+    <div
+      ref={wrapRef}
+      className="relative flex items-center justify-between gap-3 border-b border-paper-edge bg-paper px-4 py-2 pr-12"
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-ink-soft",
+          "transition hover:bg-paper-soft",
+          open && "bg-paper-soft text-ink",
+        )}
+      >
+        <svg
+          className="h-3.5 w-3.5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h18M3 6h18M3 18h18" />
+        </svg>
+        Chats
+        {switchable.length > 0 ? (
+          <span className="rounded-full bg-ink/10 px-1.5 text-[10px] text-ink-soft">
+            {switchable.length}
+          </span>
+        ) : null}
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(false);
+          onStartFresh?.();
+        }}
+        className={cn(
+          "rounded-full border border-paper-edge px-2.5 py-1 text-[11px] text-ink-soft",
+          "transition hover:border-ink-muted hover:text-ink",
+        )}
+      >
+        New chat
+      </button>
+
+      {open ? (
+        <div
+          role="menu"
+          className={cn(
+            "absolute left-3 top-[calc(100%+4px)] z-20 w-72",
+            "rounded-xl border border-paper-edge bg-paper shadow-lg",
+            "overflow-hidden",
+          )}
+        >
+          <div className="border-b border-paper-edge px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-ink-muted">
+            Recent chats
+          </div>
+          {switchable.length === 0 ? (
+            <p className="px-3 py-4 text-xs text-ink-muted">
+              No other chats yet. Start a new one with the button on the right.
+            </p>
+          ) : (
+            <ul className="max-h-72 overflow-y-auto">
+              {switchable.map((entry) => (
+                <li key={entry.id}>
+                  <a
+                    href={`/copilot?embed=1&session=${entry.id}`}
+                    className="flex flex-col gap-0.5 border-b border-paper-edge px-3 py-2 transition last:border-b-0 hover:bg-paper-soft/60"
+                    onClick={() => setOpen(false)}
+                  >
+                    <span className="line-clamp-1 text-xs text-ink">
+                      {entry.preview ?? "(no message yet)"}
+                    </span>
+                    <span className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
+                      {formatRelativeShort(entry.lastSeenAt)}
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function formatRelativeShort(ts: number): string {
+  const diff = Math.max(0, Date.now() - ts);
+  const min = Math.round(diff / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "short",
+  });
 }
 
 /**

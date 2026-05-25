@@ -100,6 +100,7 @@ export async function POST(req: Request) {
   if (!quota.accepted) {
     // Build a stream that emits ONLY a RateLimitReached UIAction and a short
     // closing text, then finishes. No agent invocation.
+    const limits = await getLimits();
     const { stream, writer } = createDataStream();
     void (async () => {
       try {
@@ -113,7 +114,7 @@ export async function POST(req: Request) {
               reason: "turns",
               headline: "You've reached today's conversation limit.",
               body:
-                `Each visitor gets ${getLimits().turnLimit} turns per day so the Co-Pilot stays available for everyone. ` +
+                `Each visitor gets ${limits.turnLimit} turns per day so the Co-Pilot stays available for everyone. ` +
                 "Come back at 00:00 UTC to continue — your conversation will start fresh.",
               remainingResetIn: untilUtcMidnightHumanReadable(),
             },

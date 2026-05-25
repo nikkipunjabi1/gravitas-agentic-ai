@@ -25,6 +25,20 @@ const config: NextConfig = {
   serverExternalPackages: ["@anthropic-ai/sdk"],
 
   /**
+   * Hide the floating dev indicator ("N" badge bottom-left in dev mode).
+   *
+   * Why: we currently serve real public traffic through `pnpm dev` over a
+   * Cloudflare Tunnel (ai.thisisgravitas.com → localhost:3001). Visitors
+   * would otherwise see the framework badge overlaid on the page, which
+   * leaks the framework AND is visually noisy on top of the Gravitas brand.
+   *
+   * Note: when this app eventually moves to `pnpm build && pnpm start` (or
+   * Railway), the indicator wouldn't render anyway — it's dev-only. This
+   * setting is harmless in production.
+   */
+  devIndicators: false,
+
+  /**
    * Frame-ancestors CSP for the embedded /copilot route.
    *
    * Default Next.js sends `X-Frame-Options: SAMEORIGIN` site-wide, which

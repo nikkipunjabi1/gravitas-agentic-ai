@@ -7,7 +7,7 @@ import { ChatPane } from "./chat-pane";
 import { CanvasPane } from "./canvas-pane";
 import { UIAction } from "@/canvas/schema";
 import { cn } from "@/lib/utils/cn";
-import { isUuid, upsertSession } from "@/lib/sessions/roster";
+import { isUuid, upsertSession, readRoster, type RosterEntry } from "@/lib/sessions/roster";
 
 /**
  * CopilotShell — dual-pane mount.
@@ -205,6 +205,41 @@ export function CopilotShell({
   const isStreaming = status === "streaming" || status === "submitted";
   const canvasVisible = actions.length > 0;
 
+  // ---- Embed-mode handshake with the parent page -------------------------
+  // When the audit lands and the canvas has content, the floating widget in
+  // public/embed.js needs to expand the iframe panel — otherwise the canvas
+  // crushes the chat into the same 420×640 box and the visitor gets three
+  // scrollbars stacked on top of each other. Two-way protocol:
+  //
+  //   iframe → parent : { type: "gravitas:canvas-state", open: true|false }
+  //
+  // embed.js listens, toggles `.gv-panel--expanded` on the floating panel.
+  // We post on every canvas-visibility transition + once on mount so a fresh
+  // load with a resumed chat starts in the right size.
+  useEffect(() => {
+    if (!embed) return;
+    if (typeof window === "undefined") return;
+    if (window.parent === window) return; // not actually iframed
+    try {
+      window.parent.postMessage(
+        { type: "gravitas:canvas-state", open: canvasVisible },
+        "*",
+      );
+    } catch {
+      // cross-origin restriction or detached frame — best-effort only
+    }
+  }, [embed, canvasVisible]);
+
+  // ---- Recent chats roster (embed dropdown only reads this) --------------
+  // Read once on mount and on every sessionId change so a fresh session
+  // appears in the dropdown without a reload. Kept lightweight — readRoster
+  // is synchronous and tiny.
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setRoster(readRoster());
+  }, [sessionId, messages.length]);
+
   // Memoise to keep the ChatPane ref-stable so its scroll-to-bottom effect
   // doesn't re-fire on every render.
   const onStartFresh = useMemo(() => handleStartFresh, [handleStartFresh]);
@@ -229,6 +264,8 @@ export function CopilotShell({
           embed={embed}
           resumed={resumed}
           onStartFresh={onStartFresh}
+          recentChats={roster}
+          activeSessionId={sessionId}
         />
       </section>
 
@@ -327,32 +364,45 @@ function useSessionId(requestedSessionId: string | null): {
     return PLACEHOLDER_SESSION_ID;
   });
 
-  // Reconcile internal id with the latest prop. Fires on mount AND on every
-  // subsequent URL change — that's the whole point of switching to a prop.
+  // Track the prop value we last reconciled against. The reconciliation
+  // effect MUST only fire on prop changes — not on internal id changes —
+  // or `startNewChat`'s setId(fresh) would immediately get reverted to the
+  // stale prop value (the server-component URL update isn't observed by
+  // window.history.replaceState, so requestedSessionId stays at the old
+  // id until a full route navigation).
+  const lastReconciledProp = useRef<string | null | undefined>(undefined);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // Skip if we've already applied this exact prop value.
+    if (lastReconciledProp.current === requestedSessionId) return;
+    lastReconciledProp.current = requestedSessionId;
+
     const desired =
       requestedSessionId && isUuid(requestedSessionId) ? requestedSessionId : null;
 
     if (desired) {
-      if (desired !== id) setId(desired);
-      upsertSession(desired); // bump lastSeenAt
+      setId(desired);
+      upsertSession(desired);
       return;
     }
 
-    // URL had no session — mint a fresh one and rewrite the URL so reloads
-    // stay sticky. Only when we don't already have a valid id in state
-    // (prevents minting on subsequent re-renders where the URL is null but
-    // we already minted one earlier in this mount's lifetime).
-    if (id === PLACEHOLDER_SESSION_ID) {
+    // No prop value — mint fresh, but ONLY if our internal state hasn't
+    // already been populated (otherwise we'd clobber a uuid we minted
+    // earlier in this mount). Read current id via setId's callback form
+    // so we don't have to add `id` to the dep array — that would re-fire
+    // the effect every time startNewChat updates id, which is exactly the
+    // bug we're avoiding.
+    setId((current) => {
+      if (current !== PLACEHOLDER_SESSION_ID) return current;
       const fresh = crypto.randomUUID();
       upsertSession(fresh);
       const url = new URL(window.location.href);
       url.searchParams.set("session", fresh);
       window.history.replaceState({}, "", url.toString());
-      setId(fresh);
-    }
-  }, [requestedSessionId, id]);
+      return fresh;
+    });
+  }, [requestedSessionId]);
 
   const startNewChat = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -361,6 +411,10 @@ function useSessionId(requestedSessionId: string | null): {
     const url = new URL(window.location.href);
     url.searchParams.set("session", fresh);
     window.history.replaceState({}, "", url.toString());
+    // Record the URL we just wrote so the reconciliation effect doesn't
+    // think the prop has "changed back" to the original value on a
+    // subsequent prop-equality check.
+    lastReconciledProp.current = fresh;
     setId(fresh);
   }, []);
 

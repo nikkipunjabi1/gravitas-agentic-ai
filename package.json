@@ -4,10 +4,10 @@
   "private": true,
   "description": "Gravitas Transformation Co-Pilot — front-facing agentic AI layer for thisisgravitas.com",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3001",
     "dev:worker": "pnpm --filter @gravitas/worker dev",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3001",
     "lint": "next lint",
     "typecheck": "tsc --noEmit && pnpm --filter @gravitas/worker typecheck",
     "test": "vitest run",

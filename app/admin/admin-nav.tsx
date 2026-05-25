@@ -19,6 +19,7 @@ const LINKS: { href: string; label: string; match: "exact" | "prefix" }[] = [
   { href: "/admin/sessions", label: "Sessions", match: "prefix" },
   { href: "/admin/queries", label: "Queries", match: "prefix" },
   { href: "/admin/kb", label: "Knowledge base", match: "prefix" },
+  { href: "/admin/settings", label: "Settings", match: "prefix" },
   { href: "/admin/health", label: "Health", match: "prefix" },
 ];
 

@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { getSupabaseAdminClient } from "@/server/supabase/client";
+import { getSetting } from "@/server/settings";
 
 /**
  * Per-IP daily quota (anti-abuse).
@@ -27,8 +28,13 @@ export interface QuotaResult {
   auditsRemaining: number;
 }
 
-const TURN_LIMIT = Number(process.env.IP_DAILY_TURN_LIMIT ?? 20);
-const AUDIT_LIMIT = Number(process.env.IP_DAILY_AUDIT_LIMIT ?? 1);
+// Env-level FLOOR — only used when Supabase is unreachable AND no setting
+// has been seeded. Real limits come from the system_settings table, edited
+// via the admin Settings page. The defaults below match the seed in
+// supabase/migrations/0005_system_settings.sql so an upgrade-in-place
+// behaves consistently before the migration runs.
+const ENV_TURN_FLOOR = Number(process.env.IP_DAILY_TURN_LIMIT ?? 20);
+const ENV_AUDIT_FLOOR = Number(process.env.IP_DAILY_AUDIT_LIMIT ?? 3);
 
 /**
  * Dev bypass — the quota is anti-abuse for production traffic. On a local
@@ -45,8 +51,21 @@ const QUOTA_BYPASSED =
   process.env.NODE_ENV !== "production" &&
   process.env.IP_QUOTA_FORCE_ENFORCE !== "true";
 
-export function getLimits(): { turnLimit: number; auditLimit: number } {
-  return { turnLimit: TURN_LIMIT, auditLimit: AUDIT_LIMIT };
+/**
+ * Resolve the current per-IP limits. Reads from `system_settings`
+ * (settings.ts) which is cached for ~60s. Falls back to env floors if
+ * Supabase is unreachable.
+ */
+export async function getLimits(): Promise<{ turnLimit: number; auditLimit: number }> {
+  try {
+    const [turnLimit, auditLimit] = await Promise.all([
+      getSetting("ip_daily_turn_limit"),
+      getSetting("ip_daily_audit_limit"),
+    ]);
+    return { turnLimit, auditLimit };
+  } catch {
+    return { turnLimit: ENV_TURN_FLOOR, auditLimit: ENV_AUDIT_FLOOR };
+  }
 }
 
 export function isQuotaBypassed(): boolean {
@@ -90,86 +109,89 @@ export function extractIp(req: Request): string | null {
 // ---------------------------------------------------------------------------
 
 export async function consumeTurn(ipHash: string): Promise<QuotaResult> {
+  const { turnLimit, auditLimit } = await getLimits();
   if (QUOTA_BYPASSED) {
     // Dev bypass — return accepted without touching the DB so a single
     // /api/chat compile doesn't burn a turn.
-    return { accepted: true, turnsRemaining: TURN_LIMIT, auditsRemaining: AUDIT_LIMIT };
+    return { accepted: true, turnsRemaining: turnLimit, auditsRemaining: auditLimit };
   }
   const client = getSupabaseAdminClient();
   if (client) {
     const { data, error } = await client.rpc("quota_consume_turn", {
       p_ip_hash: ipHash,
-      p_limit: TURN_LIMIT,
+      p_limit: turnLimit,
     });
     if (error) {
       // eslint-disable-next-line no-console
       console.error("[ip-quota] quota_consume_turn failed", error.message);
       // Fail open in case of DB outage — we'd rather serve users than block
       // them on a transient infra issue. The cost cap is the backstop.
-      return { accepted: true, turnsRemaining: TURN_LIMIT - 1, auditsRemaining: AUDIT_LIMIT };
+      return { accepted: true, turnsRemaining: turnLimit - 1, auditsRemaining: auditLimit };
     }
     const row = data?.[0];
     if (!row) {
-      return { accepted: true, turnsRemaining: TURN_LIMIT - 1, auditsRemaining: AUDIT_LIMIT };
+      return { accepted: true, turnsRemaining: turnLimit - 1, auditsRemaining: auditLimit };
     }
     return {
       accepted: row.accepted,
-      turnsRemaining: Math.max(0, TURN_LIMIT - row.turns_used),
-      auditsRemaining: Math.max(0, AUDIT_LIMIT - row.audits_used),
+      turnsRemaining: Math.max(0, turnLimit - row.turns_used),
+      auditsRemaining: Math.max(0, auditLimit - row.audits_used),
     };
   }
-  return memoryConsume(ipHash, "turns", TURN_LIMIT, AUDIT_LIMIT);
+  return memoryConsume(ipHash, "turns", turnLimit, auditLimit);
 }
 
 export async function consumeAudit(ipHash: string): Promise<QuotaResult> {
+  const { turnLimit, auditLimit } = await getLimits();
   if (QUOTA_BYPASSED) {
-    return { accepted: true, turnsRemaining: TURN_LIMIT, auditsRemaining: AUDIT_LIMIT };
+    return { accepted: true, turnsRemaining: turnLimit, auditsRemaining: auditLimit };
   }
   const client = getSupabaseAdminClient();
   if (client) {
     const { data, error } = await client.rpc("quota_consume_audit", {
       p_ip_hash: ipHash,
-      p_limit: AUDIT_LIMIT,
+      p_limit: auditLimit,
     });
     if (error) {
       // eslint-disable-next-line no-console
       console.error("[ip-quota] quota_consume_audit failed", error.message);
-      return { accepted: true, turnsRemaining: TURN_LIMIT, auditsRemaining: AUDIT_LIMIT - 1 };
+      return { accepted: true, turnsRemaining: turnLimit, auditsRemaining: auditLimit - 1 };
     }
     const row = data?.[0];
     if (!row) {
-      return { accepted: true, turnsRemaining: TURN_LIMIT, auditsRemaining: AUDIT_LIMIT - 1 };
+      return { accepted: true, turnsRemaining: turnLimit, auditsRemaining: auditLimit - 1 };
     }
     return {
       accepted: row.accepted,
-      turnsRemaining: Math.max(0, TURN_LIMIT - row.turns_used),
-      auditsRemaining: Math.max(0, AUDIT_LIMIT - row.audits_used),
+      turnsRemaining: Math.max(0, turnLimit - row.turns_used),
+      auditsRemaining: Math.max(0, auditLimit - row.audits_used),
     };
   }
-  return memoryConsume(ipHash, "audits", TURN_LIMIT, AUDIT_LIMIT);
+  return memoryConsume(ipHash, "audits", turnLimit, auditLimit);
 }
 
 export async function getQuota(
   ipHash: string,
 ): Promise<{ turnsRemaining: number; auditsRemaining: number }> {
+  const { turnLimit, auditLimit } = await getLimits();
   const client = getSupabaseAdminClient();
   if (client) {
     const { data, error } = await client.rpc("quota_get", { p_ip_hash: ipHash });
     if (error) {
-      return { turnsRemaining: TURN_LIMIT, auditsRemaining: AUDIT_LIMIT };
+      return { turnsRemaining: turnLimit, auditsRemaining: auditLimit };
     }
     const row = data?.[0];
-    if (!row) return { turnsRemaining: TURN_LIMIT, auditsRemaining: AUDIT_LIMIT };
+    if (!row) return { turnsRemaining: turnLimit, auditsRemaining: auditLimit };
     return {
-      turnsRemaining: Math.max(0, TURN_LIMIT - row.turns_used),
-      auditsRemaining: Math.max(0, AUDIT_LIMIT - row.audits_used),
+      turnsRemaining: Math.max(0, turnLimit - row.turns_used),
+      auditsRemaining: Math.max(0, auditLimit - row.audits_used),
     };
   }
   const row = memoryRows.get(memoryKey(ipHash));
-  if (!row) return { turnsRemaining: TURN_LIMIT, auditsRemaining: AUDIT_LIMIT };
+  if (!row) return { turnsRemaining: turnLimit, auditsRemaining: auditLimit };
   return {
-    turnsRemaining: Math.max(0, TURN_LIMIT - row.turns),
-    auditsRemaining: Math.max(0, AUDIT_LIMIT - row.audits),
+    turnsRemaining: Math.max(0, turnLimit - row.turns),
+    auditsRemaining: Math.max(0, auditLimit - row.audits),
   };
 }
 

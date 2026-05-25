@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CopilotShell } from "./copilot-shell";
+import { EmbedOnboarding } from "./embed-onboarding";
 import { GravitasMark } from "@/lib/branding/mark";
 
 /**
@@ -38,6 +39,18 @@ export default async function CopilotPage({
       : null;
 
   if (isEmbed) {
+    // Embed onboarding screen — shown on first iframe load (no session id
+    // in URL). Surfaces "Start a new chat" + recent-chats list, so the
+    // visitor isn't dropped into a blank chat with no way to find prior
+    // conversations. Once they pick a chat (or start a new one), the URL
+    // gets `?session=<id>` and we render the dual-pane shell instead.
+    if (!requestedSessionId) {
+      return (
+        <main className="flex min-h-screen flex-col bg-paper text-ink">
+          <EmbedOnboarding />
+        </main>
+      );
+    }
     return (
       <main className="flex min-h-screen flex-col bg-paper text-ink">
         <CopilotShell embed requestedSessionId={requestedSessionId} />

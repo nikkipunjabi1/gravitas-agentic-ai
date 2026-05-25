@@ -96,6 +96,21 @@
     "@keyframes gv-in { from { opacity: 0; transform: translateY(12px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }",
     ".gv-panel iframe { width: 100%; height: 100%; border: 0; display: block; }",
     "",
+    // Expanded mode — triggered by a postMessage from inside the iframe when
+    // the audit canvas has content. Roomy enough for the dual-pane layout to
+    // unfold; lg: breakpoint inside the shell is 1024px, so we target that.
+    // Animates the dimension change so the expansion feels intentional.
+    ".gv-panel { transition: width 240ms cubic-bezier(0.2,0.8,0.2,1), height 240ms cubic-bezier(0.2,0.8,0.2,1); }",
+    ".gv-panel.gv-panel--expanded {",
+    "  width: min(92vw, 1180px) !important; height: min(88vh, 820px) !important;",
+    "  max-width: calc(100vw - 32px) !important; max-height: calc(100vh - 48px) !important;",
+    "  bottom: 24px;",
+    "}",
+    // Hide the outer panel × while the canvas is open — the canvas pane
+    // already has its own close button (which collapses the panel back to
+    // compact). Two × buttons stacked at top-right read as broken UI.
+    ".gv-panel.gv-panel--expanded .gv-close { display: none; }",
+    "",
     ".gv-close {",
     "  position: absolute; top: 10px; " + (config.position === "bottom-left" ? "right: 10px;" : "right: 10px;"),
     "  width: 28px; height: 28px; border: none; border-radius: 14px;",
@@ -178,6 +193,29 @@
   }
 
   launcher.addEventListener("click", togglePanel);
+
+  // ---- Cross-frame protocol ----------------------------------------------
+  // The iframe (copilot-shell.tsx) postMessages this window when canvas
+  // content arrives or is dismissed, so we can grow / shrink the floating
+  // panel. We deliberately accept any origin here because the iframe origin
+  // === this script's origin by construction (embed.js + /copilot?embed=1
+  // are served from the same host), and locking origin would force a
+  // config knob we don't need yet. We DO verify the message source is the
+  // iframe we created — that's enough to prevent third-party windows from
+  // resizing our panel.
+  window.addEventListener("message", function (event) {
+    if (!iframe) return;
+    if (event.source !== iframe.contentWindow) return;
+    var data = event.data;
+    if (!data || typeof data !== "object") return;
+    if (data.type !== "gravitas:canvas-state") return;
+    if (!panel) return;
+    if (data.open) {
+      panel.classList.add("gv-panel--expanded");
+    } else {
+      panel.classList.remove("gv-panel--expanded");
+    }
+  });
 
   // ---- Mount when DOM is ready -------------------------------------------
   if (document.body) {
