@@ -62,6 +62,11 @@ export default async function SettingsPage() {
         kb={kb}
         prompts={prompts}
         features={features}
+        disclaimerSaved={
+          (rawSettings.find((r) => r.key === "ui_disclaimer_text")?.value as
+            | string
+            | undefined) ?? ""
+        }
         // rate-limit values come from the unified listSettings call
         rateLimits={{
           turnLimit:

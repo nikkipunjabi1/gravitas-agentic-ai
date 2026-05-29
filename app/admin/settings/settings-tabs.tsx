@@ -23,6 +23,7 @@ export function SettingsTabs({
   kb,
   prompts,
   features,
+  disclaimerSaved,
   meta,
 }: {
   rateLimits: { turnLimit: number; auditLimit: number };
@@ -31,6 +32,7 @@ export function SettingsTabs({
   kb: KbConfig;
   prompts: AgentPrompts;
   features: FeatureFlags;
+  disclaimerSaved: string;
   meta: MetaMap;
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("rate-limits");
@@ -63,7 +65,11 @@ export function SettingsTabs({
           <RateLimitsSection rateLimits={rateLimits} meta={meta} />
         ) : null}
         {activeTab === "branding" ? (
-          <BrandingSection branding={branding} meta={meta} />
+          <BrandingSection
+            branding={branding}
+            disclaimerSaved={disclaimerSaved}
+            meta={meta}
+          />
         ) : null}
         {activeTab === "embed" ? (
           <EmbedSection embed={embed} meta={meta} />
@@ -276,9 +282,11 @@ function RateLimitsSection({
 
 function BrandingSection({
   branding,
+  disclaimerSaved,
   meta,
 }: {
   branding: BrandingConfig;
+  disclaimerSaved: string;
   meta: MetaMap;
 }) {
   return (
@@ -288,6 +296,14 @@ function BrandingSection({
         <code>{`{{contact_name}}`}</code>, etc.) and into the closing turn / push-to-contact
         message.
       </p>
+      <TextFieldCard
+        keyName="ui_disclaimer_text"
+        label="AI-content disclaimer"
+        hint="Short line shown beneath the chat composer (embed + standalone). Reassures visitors the bot's output may contain mistakes. Leave empty to use the built-in default text shown as the placeholder."
+        initialValue={disclaimerSaved}
+        placeholder="AI-generated responses may contain mistakes. Verify key details before acting."
+        meta={meta.ui_disclaimer_text}
+      />
       <TextFieldCard
         keyName="branding_brand_name"
         label="Brand name"

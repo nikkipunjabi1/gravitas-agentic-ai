@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CopilotShell } from "./copilot-shell";
 import { EmbedOnboarding } from "./embed-onboarding";
 import { GravitasMark } from "@/lib/branding/mark";
+import { getUiDisclaimer } from "@/server/runtime-config";
 
 /**
  * /copilot — the dual-pane experience.
@@ -37,6 +38,10 @@ export default async function CopilotPage({
     typeof params.session === "string" && isUuidV4(params.session)
       ? params.session
       : null;
+  // Visitor-visible AI disclaimer (P1.19) — admin-editable via
+  // /admin/settings → Branding. Empty saved value falls back to the
+  // DEFAULT_UI_DISCLAIMER constant in runtime-config.ts.
+  const disclaimer = await getUiDisclaimer();
 
   if (isEmbed) {
     // Embed onboarding screen — shown on first iframe load (no session id
@@ -53,7 +58,11 @@ export default async function CopilotPage({
     }
     return (
       <main className="flex min-h-screen flex-col bg-paper text-ink">
-        <CopilotShell embed requestedSessionId={requestedSessionId} />
+        <CopilotShell
+          embed
+          requestedSessionId={requestedSessionId}
+          disclaimer={disclaimer}
+        />
       </main>
     );
   }
@@ -75,10 +84,14 @@ export default async function CopilotPage({
         </Link>
       </header>
 
-      <CopilotShell requestedSessionId={requestedSessionId} />
+      <CopilotShell
+        requestedSessionId={requestedSessionId}
+        disclaimer={disclaimer}
+      />
 
-      <footer className="border-t border-paper-edge px-5 py-2 text-[11px] text-ink-muted">
-        Conversations are logged for quality and to improve recommendations.
+      <footer className="space-y-0.5 border-t border-paper-edge px-5 py-2 text-[11px] text-ink-muted">
+        <p>Conversations are logged for quality and to improve recommendations.</p>
+        <p className="italic">{disclaimer}</p>
       </footer>
     </main>
   );

@@ -85,13 +85,14 @@ The router lives in `src/lib/models/`. **Do not call providers directly from age
 
 ## Bespoke configuration — read this before changing visitor-facing surfaces
 
-P1.16 made the entire visitor surface admin-tunable from `/admin/settings`:
+P1.16 + P1.18 + P1.19 made the entire visitor surface admin-tunable from `/admin/settings` (six tabs):
 
-- **Rate limits** tab: IP daily turn + audit caps.
-- **Branding** tab: brand name, named contact (name/role/email/phone). Substituted into prompts via `{{brand_name}}`, `{{contact_name}}`, etc. placeholders.
+- **Rate limits** tab: IP daily turn + audit caps + "Reset today's quota" demo helper.
+- **Branding** tab: brand name, named contact (name/role/email/phone) — substituted into prompts via `{{brand_name}}`, `{{contact_name}}`, etc. — AND the **AI-content disclaimer text** (P1.19) shown below the chat composer.
 - **Embed widget** tab: launcher text, primary colour, text colour, position, dimensions. Drives the floating launcher on the parent site via `/embed.js` (P1.16: now a dynamic route, was a static file).
 - **Knowledge base** tab: sitemap URL + optional whitelist of path prefixes.
 - **Agent prompts** tab: every Discovery / Audit / Strategy / Output system prompt. Empty value = code default; saved = override with `{{var}}` substitution.
+- **Features** tab (P1.18): three boolean flags — `feature_audit_enabled` (master switch — off = chatbot-only deployment, no audit/strategy/mapping/output canvas), `feature_audit_use_psi`, `feature_audit_use_playwright` (sub-switches for the worker's audit engines).
 
 How it works under the hood:
 - `src/server/settings.ts` — generalised key/value reader, 60s cache.

@@ -194,6 +194,27 @@ export async function getFeatureFlags(): Promise<FeatureFlags> {
   return { auditEnabled, auditUsePsi, auditUsePlaywright };
 }
 
+// ---------------------------------------------------------------------------
+// UI disclaimer (P1.19)
+//
+// Short AI-generated-content notice rendered at the foot of every chat
+// surface — standalone /copilot AND the embed widget. Always visible so
+// visitors are calibrated on what they're talking to, without spending
+// real estate on a banner.
+//
+// Default text is what an admin sees when they open /admin/settings →
+// Branding for the first time. Empty saved value = revert to default.
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_UI_DISCLAIMER =
+  "AI-generated responses may contain mistakes. Verify key details before acting.";
+
+export async function getUiDisclaimer(): Promise<string> {
+  const saved = await getSetting<string>("ui_disclaimer_text", "");
+  const trimmed = saved.trim();
+  return trimmed.length > 0 ? trimmed : DEFAULT_UI_DISCLAIMER;
+}
+
 /**
  * Substitute {{var}} placeholders with current branding values.
  */

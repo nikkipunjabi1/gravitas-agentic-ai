@@ -6,6 +6,8 @@ The reasoning core of the Co-Pilot. Read `VISION.md`, `ARCHITECTURE.md`, and **`
 > - Vector store is **Supabase `pgvector`** (P1.17, was ChromaDB).
 > - Every system prompt is admin-overridable from `/admin/settings/prompts`. The hardcoded constants in `src/agents/nodes/*.ts` are the fallback. See `PROMPTS.md` for the override-key mapping.
 > - Branding values (brand name, contact name/role/email) substitute into prompts via `{{brand_name}}`, `{{contact_name}}`, etc. placeholders.
+> - **Audit pipeline is gated by a master feature flag** (`feature_audit_enabled`, P1.18). When OFF, the graph routes Discovery → END — no Audit / Strategy / Solution Mapping / Output nodes fire. Bespoke "chatbot only" deployments set this from `/admin/settings → Features`. The Output node still exists in code; it just doesn't get reached.
+> - Output node emits a `ContactCard` canvas action alongside the closing narration (P1.18), populated from the Branding tab.
 
 ---
 

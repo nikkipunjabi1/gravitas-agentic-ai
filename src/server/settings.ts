@@ -85,6 +85,12 @@ export const SETTING_KEYS = {
   feature_audit_enabled: "feature_audit_enabled",
   feature_audit_use_psi: "feature_audit_use_psi",
   feature_audit_use_playwright: "feature_audit_use_playwright",
+
+  // ---- Visitor-visible copy (P1.19) ---------------------------------
+  // Short disclaimer rendered at the foot of the chat surface. Default
+  // lives in code (src/server/runtime-config.ts → getUiDisclaimer);
+  // empty value here = use the default, otherwise admin override wins.
+  ui_disclaimer_text: "ui_disclaimer_text",
 } as const;
 
 export type SettingKey = keyof typeof SETTING_KEYS;

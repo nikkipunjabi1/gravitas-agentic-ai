@@ -2,7 +2,7 @@
 
 How the agent "pulls in UI on demand." The contract between the agent runtime and the canvas pane.
 
-Read `AGENTS.md` and `ARCHITECTURE.md` first.
+Read `AGENTS.md` and `ARCHITECTURE.md` first. If you need a hands-on starter, jump to **"Adding a new canvas component"** at the bottom — it walks through the four-step recipe using the P1.18 `ContactCard` as the worked example.
 
 ---
 
@@ -351,3 +351,105 @@ If you skip step 1 and emit an unknown action, the validator drops it and logs. 
 - **Two streams, one for chat and one for canvas.** They desync. Use one stream with typed data parts.
 - **Components that fetch their own data.** That's a different architecture. Here, the agent prepares everything the component needs.
 - **A "generic" component that handles many types via props.** Defeats the registry. Add a new branch instead.
+
+---
+
+## Adding a new canvas component — worked example (P1.18)
+
+`ContactCard` (added in P1.18) is shipped as the canonical "copy this pattern" example. Walk through the four files it touches; mirror them for any new component you add.
+
+### Step 1 — schema branch
+
+`src/canvas/schema.ts`. Add a new `z.object` describing your component's payload, then include it in the `z.discriminatedUnion` AND in the `UI_ACTION_TYPES` const array.
+
+```ts
+const Foo = z.object({
+  type: z.literal("Foo"),
+  id: z.string().uuid(),
+  version: z.literal(1),
+  data: z.object({
+    // your fields
+    title: z.string().min(1).max(120),
+    body: z.string().max(400).optional(),
+  }),
+});
+
+export const UIAction = z.discriminatedUnion("type", [
+  // …existing branches…
+  Foo,
+]);
+
+export const UI_ACTION_TYPES: readonly UIActionType[] = [
+  // …existing entries…
+  "Foo",
+] as const;
+```
+
+If you skip the `UI_ACTION_TYPES` entry the count test in `tests/canvas/schema.test.ts` will fail — that's the canary.
+
+### Step 2 — component file
+
+`src/canvas/components/foo.tsx`. Render from `action.data` alone. Use the shared `<CanvasCard>` shell for the chrome so your component matches the rest of the Phase-1 surfaces without copy-pasting border / radius / animation rules.
+
+```tsx
+"use client";
+
+import { CanvasCard } from "./_shell";
+import type { UIActionOf } from "@/canvas/schema";
+
+export function Foo({ action }: { action: UIActionOf<"Foo"> }) {
+  const { title, body } = action.data;
+  return (
+    <CanvasCard label="Foo" id={action.id} tone="default">
+      <div className="space-y-2 px-4 py-3">
+        <p className="text-sm font-medium text-ink">{title}</p>
+        {body ? <p className="text-xs text-ink-soft">{body}</p> : null}
+      </div>
+    </CanvasCard>
+  );
+}
+```
+
+Three rules, repeated for emphasis:
+
+1. **No fetching** — no `fetch()`, no `useEffect` that pulls data.
+2. **No globals** — don't read `window.*`, `document.*`, or any context.
+3. **Deterministic** — no `Date.now()`, no `Math.random()` inside the component. Animations may use `framer-motion` because it's tied to lifecycle, not wall-clock state.
+
+### Step 3 — registry entry
+
+`src/canvas/registry.tsx`. Import the component and add it to the `registry` map. TypeScript will reject the file until every union branch is mapped — exactly the compile-time guarantee that makes step 1 + step 3 stay in lockstep.
+
+```tsx
+import { Foo } from "@/canvas/components/foo";
+
+export const registry: {
+  [K in UIActionType]: React.ComponentType<{ action: Extract<UIAction, { type: K }> }>;
+} = {
+  // …existing entries…
+  Foo,
+};
+```
+
+### Step 4 — agent emit-site
+
+Have whichever agent node should produce this card call `renderUI(writer, action, { sessionId, node })`. Example from `src/agents/nodes/output.ts`:
+
+```tsx
+import { renderUI } from "@/agents/tools/render-ui";
+
+renderUI(
+  ctx.writer,
+  {
+    type: "Foo",
+    id: crypto.randomUUID(),
+    version: 1,
+    data: { title: "Hello", body: "World" },
+  },
+  { sessionId: ctx.sessionId, node: "output" },
+);
+```
+
+`renderUI` validates the payload against the schema before sending it down the stream, logs it into `ui_actions_emitted` for the admin panel, and writes the data part the canvas client will consume.
+
+That's the entire surface. Five files: schema, component, registry, agent node, optional doc entry above. The `ContactCard` PR (P1.18) touches exactly these five.

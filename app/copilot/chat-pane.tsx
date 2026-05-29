@@ -27,6 +27,7 @@ export function ChatPane({
   onStartFresh,
   recentChats = [],
   activeSessionId = null,
+  disclaimer = "",
 }: {
   messages: Message[];
   input: string;
@@ -45,6 +46,12 @@ export function ChatPane({
   recentChats?: RosterEntry[];
   /** Current chat id — used to highlight it in the dropdown. */
   activeSessionId?: string | null;
+  /**
+   * AI-disclaimer line shown below the composer in embed mode (P1.19).
+   * Empty string = render nothing. The standalone /copilot footer
+   * shows the same string in its own chrome.
+   */
+  disclaimer?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -147,6 +154,14 @@ export function ChatPane({
         {!embed ? (
           <p className="mt-2 font-mono text-[10px] uppercase tracking-widest text-ink-muted">
             Enter to send · Shift+Enter for newline
+          </p>
+        ) : null}
+        {/* P1.19 — AI disclaimer. Embed mode renders it here (the only
+            chrome the iframe owns); standalone /copilot route has its own
+            footer that shows the same string. */}
+        {embed && disclaimer ? (
+          <p className="mt-2 text-[10px] italic leading-snug text-ink-muted">
+            {disclaimer}
           </p>
         ) : null}
       </form>

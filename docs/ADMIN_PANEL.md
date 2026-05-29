@@ -45,8 +45,10 @@ Avoid: dragging in a heavy admin-template library (refine, react-admin). The nee
 /admin/kb                             KB ingest status, run history
 /admin/kb/chunks?url=…                chunk-level inspector for one indexed
                                       page — text + metadata (P1.17)
-/admin/settings                       tabbed: Rate limits, Branding, Embed widget,
-                                      Knowledge base, Agent prompts (P1.11 + P1.16)
+/admin/settings                       tabbed: Rate limits, Branding (+ AI
+                                      disclaimer text P1.19), Embed widget,
+                                      Knowledge base, Agent prompts,
+                                      Features (P1.11 + P1.16 + P1.18 + P1.19)
 /admin/health                         live checks: Anthropic, Ollama, Supabase pgvector,
                                       Crawl worker, Playwright Chromium
 /admin/cost                  Phase 2  daily spend charts (deferred from M4)

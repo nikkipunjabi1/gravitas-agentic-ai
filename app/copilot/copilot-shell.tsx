@@ -36,6 +36,7 @@ import { isUuid, upsertSession, readRoster, type RosterEntry } from "@/lib/sessi
 export function CopilotShell({
   embed = false,
   requestedSessionId = null,
+  disclaimer = "",
 }: {
   embed?: boolean;
   /**
@@ -45,6 +46,13 @@ export function CopilotShell({
    * different ?session=), the shell switches chats without remounting.
    */
   requestedSessionId?: string | null;
+  /**
+   * AI-generated content disclaimer (P1.19). Resolved server-side from
+   * /admin/settings → Branding (with a hardcoded default fallback in
+   * runtime-config.ts). Rendered only in embed mode; the standalone
+   * /copilot route shows it in its own footer.
+   */
+  disclaimer?: string;
 } = {}) {
   const { sessionId, startNewChat } = useSessionId(requestedSessionId);
 
@@ -266,6 +274,7 @@ export function CopilotShell({
           onStartFresh={onStartFresh}
           recentChats={roster}
           activeSessionId={sessionId}
+          disclaimer={disclaimer}
         />
       </section>
 
