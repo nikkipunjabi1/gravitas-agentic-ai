@@ -8,14 +8,14 @@ This file is the project memory Claude Code loads on every session. Read it firs
 
 If this is the first Claude Code session on this machine (e.g. switching from Mac planning to Windows dev):
 
-1. `git pull` to ensure you have the latest planning docs (don't trust local clones — pull first).
+1. `git pull` to ensure you have the latest code + docs (don't trust local clones — pull first).
 2. Read this file end-to-end, then the docs in the order `README.md` lists.
-3. Check `docs/ROADMAP.md` for the phase marked **IN PROGRESS**. That is the work in scope. Do not start any later phase.
-4. **On Windows:** skim `docs/SETUP_WINDOWS.md` and confirm WSL2 + Node 22 + Ollama + ChromaDB (Docker) + Playwright deps are installed. If not, walk the user through that setup before scaffolding.
-5. Confirm with the user **which task within the active phase** to start with. Do not assume.
-6. When `pnpm dev` first works end-to-end, stop and report. Don't blow past the Definition of Done.
+3. Check `docs/ROADMAP.md` for what's shipped + what's pending. Read **`docs/SESSION_FLOW.md`** if you're going to touch the agent graph or model routing — it's the canonical reference for "what happens when a visitor sends a message".
+4. **On Windows:** skim `docs/SETUP_WINDOWS.md` and confirm Node 22 + Ollama + Playwright Chromium + Supabase access are configured. **ChromaDB is no longer required** (P1.17 replaced it with Supabase pgvector).
+5. Confirm with the user what they want to work on. Do not assume.
+6. Before declaring any change "done": `pnpm lint && pnpm typecheck && pnpm test` must pass + UI changes smoke-tested via `pnpm dev` (or `pnpm build && pnpm start` for production-mode behaviour).
 
-The current active phase as of this commit is **Phase 0 — Foundation**. It begins with `pnpm create next-app .` per the conventions and folder layout below.
+**Current state of the project (P1.17 shipped):** Phase 1 milestones M1–M6 + post-milestone polish (P1.11–P1.17) are all landed in `origin/main`. The pilot runs from a local laptop (or `pnpm dev`/`pnpm start`) exposed via a Cloudflare Tunnel as `ai.thisisgravitas.com`. The product is configurable for bespoke client deployments from `/admin/settings` — see "Bespoke configuration" below.
 
 ---
 
@@ -25,15 +25,15 @@ The current active phase as of this commit is **Phase 0 — Foundation**. It beg
 2. Then read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/AGENTS.md](docs/AGENTS.md), and [docs/UI_CONTRACT.md](docs/UI_CONTRACT.md). They are the source of truth for *how*.
 3. Read [docs/BRANDING.md](docs/BRANDING.md) before generating any user-facing artifact — chat copy, canvas component, report.
 4. Read [docs/ADMIN_PANEL.md](docs/ADMIN_PANEL.md) before touching `/admin/*` routes, the logging chokepoint in the model router, or the Supabase log tables.
-5. If a doc disagrees with a user instruction, ask — don't silently pick.
+5. Read [docs/SESSION_FLOW.md](docs/SESSION_FLOW.md) before touching agent nodes — has the full Mermaid flow + per-node responsibilities + failure-path matrix.
+6. Read [docs/PROMPTS.md](docs/PROMPTS.md) before changing any system prompt — every prompt is now also admin-tunable from `/admin/settings/prompts` (P1.16); the doc lists which key in `system_settings` overrides each hardcoded constant.
+7. If a doc disagrees with a user instruction, ask — don't silently pick.
 
-## Milestone discipline — hard rule
+## Milestone discipline — hard rule (historical context)
 
-There is **one phase** — Phase 1 — covering the full Gravitas Co-Pilot scope. Inside it are six **milestones** (M1–M6) in `docs/ROADMAP.md`. They are verify-and-continue checkpoints, not approval gates.
+Phase 1 milestones M1–M6 are **all shipped** as of P1.10. The discipline rule was: "don't start M_{N+1} while M_N is unfinished; each milestone must be demo-able end-to-end before the next begins." That guardrail did its job.
 
-**Do not start M_{N+1} work while M_N is unfinished.** Each milestone must be working end-to-end and demo-able per its "Demo-able state" section before the next begins. If you see something tempting that fits a later milestone, add it to the **Backlog** in `ROADMAP.md` and move on — don't sneak it into the current milestone.
-
-The current milestone is the one marked **IN PROGRESS** in `docs/ROADMAP.md`. On completion of each milestone, report the demo-able state was achieved, then continue to the next without waiting for user sign-off. The user signs off **once** — at the end of M6.
+**Current work pattern (post-M6):** discrete `P1.N` polish batches that respond to live-pilot feedback. Each ships a focused change set (3–10 files), has its own commit, runs the gates, then pushes. The active list is in `docs/ROADMAP.md` under "Post-M6 polish (P1.11+)". Latest shipped: **P1.17** (ChromaDB → Supabase pgvector + chunks viewer).
 
 ## Conventions
 
@@ -83,9 +83,28 @@ When in doubt, follow the file that already exists; don't invent a parallel stru
 
 The router lives in `src/lib/models/`. **Do not call providers directly from agent nodes** — go through the router so we can swap models without surgery.
 
+## Bespoke configuration — read this before changing visitor-facing surfaces
+
+P1.16 made the entire visitor surface admin-tunable from `/admin/settings`:
+
+- **Rate limits** tab: IP daily turn + audit caps.
+- **Branding** tab: brand name, named contact (name/role/email/phone). Substituted into prompts via `{{brand_name}}`, `{{contact_name}}`, etc. placeholders.
+- **Embed widget** tab: launcher text, primary colour, text colour, position, dimensions. Drives the floating launcher on the parent site via `/embed.js` (P1.16: now a dynamic route, was a static file).
+- **Knowledge base** tab: sitemap URL + optional whitelist of path prefixes.
+- **Agent prompts** tab: every Discovery / Audit / Strategy / Output system prompt. Empty value = code default; saved = override with `{{var}}` substitution.
+
+How it works under the hood:
+- `src/server/settings.ts` — generalised key/value reader, 60s cache.
+- `src/server/runtime-config.ts` — typed accessors per section.
+- `app/embed.js/route.ts` — dynamic embed.js, admin defaults injected via IIFE (admin wins over GTM page-level config).
+- Agent nodes (`src/agents/nodes/*.ts`) read prompts via `getAgentPrompts() + resolvePrompt()` with hardcoded fallbacks.
+- Worker (`worker/src/kb-ingest.ts`) reads sitemap URL + whitelist via `worker/src/settings.ts`.
+
+When adding new admin-tunable surfaces: add the key to `SETTING_KEYS`, write a typed accessor in `runtime-config.ts` with the hardcoded fallback, expose a card in `app/admin/settings/settings-tabs.tsx`, validate the input in `app/api/admin/settings/route.ts`. The pattern is repeated; follow what's there.
+
 ## Do not (without asking)
 
-- Add a new paid service. Production stack is: **Anthropic API + Railway (one project hosting Next.js, crawl worker, Chroma, cron) + Supabase free tier + Cloudflare free tier**. Dev runs entirely on the developer's Windows + WSL2 box at $0 (Path A). See `docs/ARCHITECTURE.md` → Deployment paths. Anything else needs approval.
+- Add a new paid service. Production stack is: **Anthropic API + Railway (one project hosting Next.js, crawl worker, cron) + Supabase free tier (with `pgvector` for the KB — replaces ChromaDB as of P1.17) + Cloudflare free tier**. Dev runs entirely on the developer's Windows box at $0 + a Cloudflare Tunnel for the public domain. See `docs/ARCHITECTURE.md` → Deployment paths. Anything else needs approval.
 - Add a new agent or canvas component type beyond what's in `docs/AGENTS.md` and `docs/UI_CONTRACT.md`.
 - **Bypass the daily cost cap.** Every call to Anthropic goes through `src/lib/models/router.ts`. The router checks the `cost_ledger` (Supabase) before every Claude call. `voice-heavy` calls refuse (throw `DailyCapExceeded`); `voice-light` calls silently swap to Ollama (lite mode). No raw `anthropic.messages.create` calls anywhere else in the code. See `docs/ARCHITECTURE.md` → Cost cap.
 - **Mis-tier a purpose.** Every `router.complete()` call MUST tag `purpose` as `voice-light` (cheap, 2-4 sentence user-facing) or `voice-heavy` (audit narration, strategy synthesis, executive brief). Don't sneak heavy work through as light to avoid the cap — the per-call max-tokens cap is enforced separately. See `docs/AGENTS.md` → Model routing rules.
@@ -103,15 +122,17 @@ The router lives in `src/lib/models/`. **Do not call providers directly from age
 
 ## Commands
 
-Phase 0 scaffolding is in place. The commands below are wired in `package.json` (root) and `worker/package.json`.
-
 ```bash
 # Install once
 pnpm install                  # installs root + worker workspaces
 
-# Dev loops
-pnpm dev                      # Next.js dev server on :3000
+# Dev loops (use these while iterating on features)
+pnpm dev                      # Next.js dev server on :3001 (P1.12: was :3000)
 pnpm dev:worker               # crawl worker (Fastify) on :8787
+
+# Production-mode loops (use these for the pilot served via Cloudflare Tunnel)
+pnpm build                    # one-time per code change
+pnpm start                    # serves the built bundle on :3001
 
 # Quality gates — must all pass before declaring "done"
 pnpm lint                     # eslint (next/core-web-vitals + next/typescript)
@@ -121,10 +142,26 @@ pnpm e2e                      # Playwright smoke (boots dev server)
 
 # One-off
 pnpm branding:fetch           # downloads Gravitas logo SVG → src/lib/branding/logo.ts
-pnpm kb:reseed                # full re-crawl of the Gravitas KB whitelist (Phase 1+)
+pnpm kb:reseed                # full re-crawl of the sitemap (writes to Supabase pgvector)
 ```
 
+`pnpm start` serves the **previous** `pnpm build` — code changes don't hot-reload. After any edit while running production-mode, you must `Ctrl-C → pnpm build → pnpm start`. Dev mode (`pnpm dev`) auto-recompiles; the dev-mode "N" badge is hidden via `devIndicators: false` in `next.config.ts`.
+
 Before declaring a task "done": `pnpm lint && pnpm typecheck && pnpm test` must all pass, and any UI change must be smoke-tested manually through `pnpm dev` (see global rules in the harness about not claiming success without verification).
+
+## Migrations to apply when bringing up a fresh Supabase project
+
+Run each in order in the Supabase SQL editor (or via `supabase db push` if using the CLI). Without these, large pieces of the app silently fall back to defaults:
+
+| File | What it adds | What breaks if you skip it |
+|---|---|---|
+| `0001_phase1_core.sql` | sessions, messages, model_calls, ui_actions_emitted, cost_ledger, ip_quota | Everything — no persistence |
+| `0002_admin_email_guard.sql` | Trigger restricting admin sign-ups to `@thisisgravitas.com` | Anyone can sign in to `/admin/*` |
+| `0003_kb_ingest_runs.sql` | KB ingest run history table | `/admin/kb` can't show recent runs |
+| `0004_kb_notifications.sql` | KB ingest email-notification settings | KB cron can't send notifications |
+| `0005_system_settings.sql` | `system_settings` table + `quota_reset_today()` RPC (P1.11) | `/admin/settings` falls back to defaults; no admin-tunable rate limits |
+| `0006_model_call_payloads.sql` | request_payload + response_payload columns on model_calls (P1.15) | Flow page can't show request/response details |
+| `0007_pgvector_kb.sql` | `pgvector` extension + `kb_chunks` table + `kb_chunks_search` RPC (P1.17) | KB queries return empty; agent never grounds in case studies |
 
 ## Voice (when generating user-facing copy)
 

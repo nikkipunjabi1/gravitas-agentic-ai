@@ -36,15 +36,22 @@ Avoid: dragging in a heavy admin-template library (refine, react-admin). The nee
 ```
 /admin/login                          public — magic link
 /admin                                dashboard home
-/admin/sessions                       sessions table + filters
-/admin/sessions/[id]                  single session transcript
-/admin/queries                        recent visitor opener messages
-/admin/cost                  M4       daily spend charts and breakdowns
-/admin/kb                    M4       KB ingest status, run history
-/admin/answers               M4       curated answers — admin-authored knowledge
-/admin/waitlist              M4       captured cap-reached emails
-/admin/health                         tiny page: are Ollama/Chroma/worker/Anthropic reachable
-/admin/settings              M4       cap value, retention, alert recipients
+/admin/sessions                       sessions table + filters (paginated)
+/admin/sessions/[id]                  single session transcript (chat-style)
+/admin/sessions/[id]/flow             agent-flow view: Mermaid diagram +
+                                      phase cards + click-to-expand
+                                      request/response payloads (P1.12 + P1.14 + P1.15)
+/admin/queries                        recent visitor opener messages (paginated, P1.15)
+/admin/kb                             KB ingest status, run history
+/admin/kb/chunks?url=…                chunk-level inspector for one indexed
+                                      page — text + metadata (P1.17)
+/admin/settings                       tabbed: Rate limits, Branding, Embed widget,
+                                      Knowledge base, Agent prompts (P1.11 + P1.16)
+/admin/health                         live checks: Anthropic, Ollama, Supabase pgvector,
+                                      Crawl worker, Playwright Chromium
+/admin/cost                  Phase 2  daily spend charts (deferred from M4)
+/admin/answers               Phase 2  curated answers (deferred from M4)
+/admin/waitlist              Phase 2  captured cap-reached emails (deferred from M4)
 ```
 
 ## Views
@@ -64,7 +71,7 @@ A tile strip + two small lists. No deep analytics here — that's `/admin/cost`.
 | Cap-blocked today | Count of `model_calls.was_blocked = true`. Red if > 0. |
 | Lite-mode answers today | `cost_ledger.lite_mode_substitutions` for today. When > 0 it means the cap was hit and Ollama is handling light voice — site is still useful but downgraded. |
 | Rate-limited IPs today | Count of distinct `ip_hash` rows where `turns_used >= IP_DAILY_TURN_LIMIT` OR `audits_used >= IP_DAILY_AUDIT_LIMIT`. Healthy state is low; spike suggests abuse or a viral moment. |
-| Health | Four dots: Ollama, Chroma, Crawl worker, Anthropic. Click-through to `/admin/health`. |
+| Health | Five dots: Anthropic, Ollama, Supabase pgvector, Crawl worker, Playwright Chromium. Click-through to `/admin/health`. |
 
 **Recent sessions** — last 10 with timestamp, industry, terminal node, total cost. Click → session detail.
 
@@ -139,7 +146,7 @@ Tiny page that hits four endpoints from the server and renders the result:
 |---|---|
 | Anthropic | `GET /v1/models` with the key — 200? |
 | Ollama | `GET /api/tags` — 200, expected models listed? |
-| Chroma | `GET /api/v1/heartbeat` — 200? |
+| Supabase pgvector | `kb_chunks_search` RPC reachable + reports current chunk count. (P1.17 — was a Chroma heartbeat check.) |
 | Crawl worker | `GET /health` with the shared secret — 200? |
 
 Cache for 30s on the server to avoid hammering them. **No live polling from the client** — admin opens, sees status, refreshes if they want.

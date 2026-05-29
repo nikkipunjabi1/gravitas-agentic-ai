@@ -1,6 +1,11 @@
 # Agents
 
-The reasoning core of the Co-Pilot. Read `VISION.md` and `ARCHITECTURE.md` first.
+The reasoning core of the Co-Pilot. Read `VISION.md`, `ARCHITECTURE.md`, and **`SESSION_FLOW.md`** first.
+
+> **Live state (post-M6 polish):**
+> - Vector store is **Supabase `pgvector`** (P1.17, was ChromaDB).
+> - Every system prompt is admin-overridable from `/admin/settings/prompts`. The hardcoded constants in `src/agents/nodes/*.ts` are the fallback. See `PROMPTS.md` for the override-key mapping.
+> - Branding values (brand name, contact name/role/email) substitute into prompts via `{{brand_name}}`, `{{contact_name}}`, etc. placeholders.
 
 ---
 
@@ -113,7 +118,7 @@ The audit report explicitly says this — see `docs/BRANDING.md` → "About this
 
 **Model:** Claude Sonnet 4.6. This is the highest-stakes voice moment in the session — it must read like a Gravitas strategist.
 
-**Grounding:** Retrieves the top-k Gravitas KB chunks (case studies, service pages, POV articles) from ChromaDB before composing. Cites at least one when relevant. Never fabricates a case study.
+**Grounding:** Retrieves the top-k Gravitas KB chunks (case studies, service pages, POV articles) from **Supabase pgvector** (P1.17 — was ChromaDB) via the `kb_chunks_search` RPC. Cites at least one when relevant. Never fabricates a case study. Admins can inspect any chunk's content at `/admin/kb/chunks?url=…`.
 
 ### 4. Solution Mapping
 

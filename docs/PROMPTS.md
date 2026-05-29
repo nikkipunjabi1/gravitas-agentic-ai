@@ -3,6 +3,22 @@
 > Every LLM-facing system prompt in the codebase is listed here. If you change a prompt, update this doc. If a model call exists without a corresponding entry, that's a bug.
 >
 > Generated for P1.10 review. Source of truth remains the files themselves — paths + line ranges are stated alongside each prompt so you can read the exact bytes.
+>
+> **P1.16 update — runtime overrides.** Every prompt below is also editable by admins via `/admin/settings/prompts`. The override key in the `system_settings` table is shown alongside each prompt as **Admin override key:**. When the override is empty/unset, the hardcoded constant in the file is used (current behaviour). When the override is set, the admin's value wins, with `{{brand_name}}`, `{{contact_name}}`, `{{contact_role}}`, `{{contact_email}}`, `{{contact_phone}}` placeholders substituted at runtime from the Branding tab.
+>
+> **Admin override keys (P1.16):**
+> | Prompt section | `system_settings.key` |
+> |---|---|
+> | Discovery — VOICE_SYSTEM_BASE | `prompt_discovery_voice_base` |
+> | Discovery — PROBLEM_SYSTEM | `prompt_discovery_problem` |
+> | Discovery — KB_GROUNDED_SYSTEM | `prompt_discovery_kb_grounded` |
+> | Discovery — KB_EMPTY_SYSTEM | `prompt_discovery_kb_empty` |
+> | Discovery — META_SYSTEM | `prompt_discovery_meta` |
+> | Discovery — OFFTOPIC_SYSTEM | `prompt_discovery_offtopic` |
+> | Audit — inline narration | `prompt_audit_narration` |
+> | Strategy — STRATEGY_SYSTEM | `prompt_strategy_json` |
+> | Strategy — NARRATION_SYSTEM | `prompt_strategy_narration` |
+> | Output — OUTPUT_SYSTEM | `prompt_output_close` |
 
 ---
 

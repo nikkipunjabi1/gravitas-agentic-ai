@@ -1,18 +1,22 @@
 # Roadmap
 
-**One phase. Six milestones. The full Gravitas Transformation Co-Pilot ships at the end of Phase 1.**
+## Status: live pilot
 
-Milestones within Phase 1 are **internal checkpoints** — verify-and-continue, NOT approval gates. Claude Code completes each milestone (working end-to-end, demo-able, all tests green) before moving on to the next. No user sign-off required between milestones. The user signs off **once**, when Phase 1 is fully done (M6 complete).
+Phase 1 (M1–M6) is **shipped**. The product is running from a local laptop served via `ai.thisisgravitas.com` (Cloudflare Tunnel) and is being iterated as discrete `P1.N` polish batches in response to live-pilot feedback.
 
----
+**Latest shipped**: P1.17 (ChromaDB → Supabase pgvector + chunks viewer at `/admin/kb/chunks`).
 
-## Phase 1 — Gravitas Transformation Co-Pilot
-
-Full scope. No deferral. Six internal milestones (M1–M6) provide build cadence — they prevent the "3-month black box with nothing demo-able" failure mode without re-introducing phasing.
+Scroll to the "Post-M6 polish (P1.11+)" section below for the running list of post-milestone work. The M1–M6 sections that follow are kept as historical reference.
 
 ---
 
-### M1 — Foundation **IN PROGRESS**
+## Phase 1 — Gravitas Transformation Co-Pilot (shipped)
+
+Full scope. No deferral. Six internal milestones (M1–M6) provided build cadence — they prevented the "3-month black box with nothing demo-able" failure mode without re-introducing phasing.
+
+---
+
+### M1 — Foundation **✅ shipped**
 
 Scaffolding and shared infrastructure. No agent intelligence yet — wire the framework so the rest slots in.
 
@@ -43,7 +47,7 @@ Scaffolding and shared infrastructure. No agent intelligence yet — wire the fr
 
 ---
 
-### M2 — Auditor + KB ingest + Cost cap + Rate limit + Minimal admin
+### M2 — Auditor + KB ingest + Cost cap + Rate limit + Minimal admin **✅ shipped**
 
 The first end-to-end "wow" demo: visitor pastes a URL → audit appears in the canvas in < 30s. All the operational guards in place from day one.
 
@@ -94,7 +98,7 @@ The first end-to-end "wow" demo: visitor pastes a URL → audit appears in the c
 
 ---
 
-### M3 — Full multi-agent graph + Strategy grounding + Persistent sessions
+### M3 — Full multi-agent graph + Strategy grounding + Persistent sessions **✅ shipped**
 
 Move from one-shot audit to genuine multi-agent reasoning. The graph nodes shift from sequential pass-through to properly orchestrated state.
 
@@ -118,9 +122,9 @@ Move from one-shot audit to genuine multi-agent reasoning. The graph nodes shift
 
 ---
 
-### M4 — Curated Answers + Full Admin Panel
+### M4 — Curated Answers + Full Admin Panel **partially shipped**
 
-Admin can author canonical knowledge; hybrid `kb_search` blends auto-crawled and curated. Full admin panel with charts, KB controls, and gated write actions.
+Admin panel + KB controls landed (P1.6 / P1.7 / P1.8 / P1.13–P1.17). Curated Answers (admin-authored knowledge layered on the auto-crawled KB) is **NOT yet built** — see Backlog. The non-curated parts of M4 — `/admin/cost`, `/admin/kb` with run history, `/admin/queries`, `/admin/settings`, gated write actions, CSV export (partial) — are all in.
 
 **Deliverables**
 
@@ -150,9 +154,9 @@ Admin can author canonical knowledge; hybrid `kb_search` blends auto-crawled and
 
 ---
 
-### M5 — Executive Brief PDF + Industry modes
+### M5 — Executive Brief PDF + Industry modes **partially shipped**
 
-The deliverable artifact (PDF) and audience-specific tuning.
+Print-to-PDF from the canvas (`window.print()` with a print stylesheet) shipped in P1.10 instead of a full server-generated PDF. Industry modes are still in code as a Phase-2 follow-up — see Backlog.
 
 **Deliverables**
 
@@ -178,9 +182,9 @@ The deliverable artifact (PDF) and audience-specific tuning.
 
 ---
 
-### M6 — Evals + Alerts + Production cutover
+### M6 — Evals + Alerts + Production cutover **partially shipped**
 
-Quality discipline + ship.
+Production cutover landed via a different path: the pilot runs from a local laptop exposed via Cloudflare Tunnel at `ai.thisisgravitas.com` (rather than full Railway hosting). Email notifications for KB ingest landed in P1.8. The eval harness + Slack alerts + daily digest email are still in Backlog — they're the next chunk to take on if/when the live pilot uncovers a quality regression we'd want guard rails against.
 
 **Deliverables**
 
@@ -213,10 +217,41 @@ Quality discipline + ship.
 
 ---
 
+## Post-M6 polish (P1.11+) — shipped
+
+Discrete fix-and-iterate batches in response to live-pilot feedback. Each is a single commit; gates (`pnpm typecheck && pnpm lint && pnpm test`) green before push.
+
+| Batch | Shipped | Headline |
+|---|---|---|
+| **P1.11** | embed UX + admin-tunable rate limits | Embed onboarding screen at `/copilot?embed=1`; in-iframe header with recent-chats dropdown; expanded panel on canvas open via postMessage; admin Settings page with rate limits + "Reset today's quota" demo helper. Migration 0005 adds `system_settings` + `quota_reset_today()` RPC. |
+| **P1.12** | worker call observability + Flow view | Worker PSI + Playwright calls log into `model_calls` with provider tags (`google-psi`, `playwright`). New `/admin/sessions/[id]/flow` page groups events by agent phase. New `docs/SESSION_FLOW.md` doc. |
+| **P1.13** | Playwright Chromium on /admin/health | Worker `/health` reports `playwrightChromium: { installed, path }`. New Health card with one-line install hint. |
+| **P1.14** | interactive Mermaid diagram on Flow | `mermaid` v11 dep; client-rendered sequence diagram with live data substituted (every arrow is a real event from the session, blocked calls drawn with `-x`). |
+| **P1.15** | admin observability bundle | Pagination on `/admin/queries`. Scannable timeline (chat-style bubbles for visitor/assistant; thin telemetry rows for model calls + UI actions). Migration 0006 adds `request_payload` + `response_payload` JSONB to `model_calls`. Capture wired in router + worker. Flow page's External-call rows expand on click to show request/response JSON. |
+| **P1.16** | bespoke deployability | Generalised `src/server/settings.ts` to any JSON-serialisable value. New tabbed `/admin/settings` (Rate limits / Branding / Embed widget / Knowledge base / Agent prompts). `/embed.js` becomes a dynamic Next.js route reading admin-defined defaults. Worker reads KB sitemap + whitelist from settings. Agent nodes read prompts via `getAgentPrompts() + resolvePrompt()` with `{{brand_name}}` etc. placeholders. |
+| **P1.16.1** | fix embed.js merge priority | Flip so admin defaults win over GTM page-level config. Was the silent failure mode where saving admin colour/text appeared to do nothing. |
+| **P1.17** | ChromaDB → Supabase pgvector | Migration 0007 enables `pgvector` extension, creates `kb_chunks` table with `vector(768)` column + `kb_chunks_search` RPC. Agent + worker both write/read via Supabase. New `/admin/kb/chunks?url=…` viewer for inspecting individual chunk content + metadata. ChromaDB Docker dependency removed entirely; Health page check swapped. |
+
+Other interim fixes worth knowing about (not labelled as P1.N):
+- Embed widget: animated dot loader inside the Send button while assistant streams (replaces a static `…`).
+- Embed widget: per-conversation roster (10 chats max in `localStorage`, 30-day TTL); landing-page "Recent chats" list; URL is source-of-truth for active session (`/copilot?session=<uuid>`).
+- Discovery: URL detection accepts bare hostnames (`adcb.com` → `https://adcb.com`); Gravitas URLs and URLs in non-audit-intent messages don't auto-trigger the audit pipeline.
+- KB ingest: whitelist replaced with deny-list-only by default (was missing `/firstmakers`, `/contact`, `/experience-design-strategy`, etc.); admins can re-add a whitelist from `/admin/settings`.
+- Print-to-PDF download path from the canvas (`window.print()` with print stylesheet).
+- Profanity 3-strike guardrail (`src/lib/guardrails/profanity.ts`).
+
 ## Backlog (post-Phase 1)
 
-Not part of the Phase 1 build. Captured here so we don't forget. Promote any of these to a future Phase 2 if/when it's prioritized.
+Not part of the shipped Phase 1 build. Captured here so we don't forget.
 
+**Deferred from M-series — promote when prioritised:**
+- **Curated Answers** (was M4): admin authors canonical Markdown answers, `/admin/answers` CRUD, hybrid `kb_search` blending auto-crawled and curated with per-row weight. Topic-cluster "Create curated answer for this topic" pre-fill from `/admin/queries`.
+- **Server-generated PDF** (was M5): full Gravitas template with annotated screenshot, served with a signed URL. P1.10 shipped `window.print()` as the interim; the full PDF generator is a real piece of work.
+- **Industry-specific modes** (was M5): Banking / Government / Retail / Healthcare each tuning Discovery + Solution Map. Auto-detect from the visitor's opener.
+- **Eval harness + alerts + daily digest** (was M6): golden conversations, LLM-as-judge weekly run, Slack + email alerts on cost / KB / eval regressions.
+- **Full Railway production cutover** (was M6 alternative): the laptop+Cloudflare-Tunnel pilot stays for now; Railway is the right answer once the audience exceeds ~50 concurrent visitors.
+
+**General product backlog:**
 - Multilingual (Arabic priority given Gravitas's Gulf client base)
 - Voice input
 - Embedded onto specific Gravitas service pages with pre-filled context
@@ -227,7 +262,7 @@ Not part of the Phase 1 build. Captured here so we don't forget. Promote any of 
 - CMS webhook for real-time KB updates (replaces the daily cron)
 - Light mode
 - Real-time admin view of an active session (websocket)
-- `curated_answer_versions` append-only history table (time-travel queries)
+- Per-tenant Supabase project (currently single-tenant) for true multi-client deployments
 
 ---
 
@@ -247,10 +282,8 @@ Tracked from production traffic (M6 onwards). Surfaced on the `/admin/cost` page
 
 ---
 
-## How milestones are verified
+## How work is verified (current cadence)
 
-Claude Code completes each milestone with its **Demo-able state** satisfied — working end-to-end, all tests green — then continues to the next. No user sign-off required between milestones. Claude reports completion and proceeds.
+Each `P1.N` polish batch is a single commit with all gates green (`pnpm typecheck && pnpm lint && pnpm test`) before push. UI-visible changes get smoke-tested via `pnpm dev` or `pnpm build && pnpm start`. Schema changes get a migration file in `supabase/migrations/` — the user runs each new migration in the Supabase SQL editor before the corresponding code path activates.
 
-The user signs off **once**, at the end of M6, when Phase 1 is fully done and production is live.
-
-If Claude Code encounters a blocker that genuinely requires a decision (a third-party service unavailable, an architectural ambiguity not resolved in the docs, a credential the user must provide), it stops and asks. Otherwise: complete the milestone, verify, continue.
+When Claude Code hits a blocker that genuinely requires a decision (a third-party service unavailable, an architectural ambiguity, a credential the user must provide), it stops and asks. Otherwise: ship the batch, verify, push, move on.

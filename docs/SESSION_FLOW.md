@@ -22,7 +22,7 @@ sequenceDiagram
     participant PSI as Google PageSpeed<br/>Insights API
     participant OL as Ollama<br/>(local, free)
     participant CL as Claude Sonnet 4.6<br/>(Anthropic API)
-    participant CH as ChromaDB<br/>(vector store)
+    participant PG as Supabase pgvector<br/>(vector store, P1.17)
     participant SB as Supabase<br/>(logs + history)
 
     V->>API: "https://www.visitdubai.com"
@@ -54,8 +54,8 @@ sequenceDiagram
     LG->>STR: route after audit
     STR->>OL: embed(visitor problem) via nomic-embed-text
     OL-->>STR: 768-dim vector
-    STR->>CH: query top-k (k=4) gravitas-kb
-    CH-->>STR: 4 chunk excerpts
+    STR->>PG: kb_chunks_search RPC (k=4)
+    PG-->>STR: 4 chunk excerpts
     STR->>CL: voice-heavy JSON synthesis<br/>(audit + KB chunks + visitor context)
     CL-->>STR: strict JSON: maturity / roadmap / themes
     STR->>V: emit MaturityChart + ThemesGrid + RoadmapWidget
@@ -99,7 +99,7 @@ Logs in `model_calls`:
 
 ### Strategy — `src/agents/nodes/strategy.ts`
 
-1. Best-effort KB grounding — embeds the visitor's named problem (or the audit URL) via Ollama → queries ChromaDB for top-k chunks. Used as system-prompt context for Claude.
+1. Best-effort KB grounding — embeds the visitor's named problem (or the audit URL) via Ollama → calls the `kb_chunks_search` RPC in Supabase pgvector for top-k chunks. Used as system-prompt context for Claude.
 2. **JSON synthesis** via Claude voice-heavy — strict schema (`ClaudeStrategyJson`). On parse failure, retries once with a stricter wrapper; if both fail, deterministic fallback from audit data alone.
 3. Emits `MaturityChart`, `ThemesGrid`, `RoadmapWidget`.
 4. Streamed 3-sentence narration via Claude voice-heavy.

@@ -109,23 +109,20 @@ You should see the three models listed. If you get `Connection refused`, check t
 
 ---
 
-## 5. ChromaDB
+## 5. ~~ChromaDB~~ — no longer required (P1.17)
 
-Easiest: Docker.
+The vector store moved to **Supabase `pgvector`** in P1.17. Docker / ChromaDB is no longer part of the stack. Skip this step.
 
-### Docker Desktop
-
-1. Install: https://www.docker.com/products/docker-desktop/
-2. In settings → Resources → WSL Integration: enable Ubuntu.
-3. Verify in WSL: `docker ps`
-
-### Run Chroma
+If you have a Chroma container left over from earlier setup, you can stop and remove it:
 
 ```bash
-docker run -d --name chroma -p 8000:8000 -v chroma-data:/chroma/chroma chromadb/chroma:latest
+docker stop chroma && docker rm chroma
+docker volume rm chroma-data
 ```
 
-Verify: `curl http://localhost:8000/api/v1/heartbeat`
+The `CHROMA_URL` / `CHROMA_TENANT` / `CHROMA_KB_COLLECTION` env vars are ignored by the running code — safe to remove from `.env.local`.
+
+Instead, apply migration `supabase/migrations/0007_pgvector_kb.sql` in the Supabase SQL editor. That enables the `pgvector` extension, creates the `kb_chunks` table, and installs the `kb_chunks_search` RPC the agent reads from. Verify in Supabase Studio → Table editor: `kb_chunks` should appear.
 
 ---
 
@@ -190,8 +187,10 @@ cp .env.example .env.local
 - `ANTHROPIC_API_KEY` — https://console.anthropic.com/
 - `SUPABASE_URL` / keys — Supabase project settings
 - `OLLAMA_BASE_URL` — usually `http://localhost:11434` (or `http://host.docker.internal:11434` if WSL networking is in NAT mode)
-- `CHROMA_URL` — `http://localhost:8000`
 - `CRAWL_WORKER_URL` — `http://localhost:8787` in dev
+- `CRAWL_WORKER_SHARED_SECRET` — ≥ 16-char random string; same value in both Next.js + worker
+- `PAGESPEED_INSIGHTS_API_KEY` — recommended for the audit path (free, https://developers.google.com/speed/docs/insights/v5/get-started)
+- `CHROMA_*` — **ignored** as of P1.17; safe to remove
 
 See `docs/ARCHITECTURE.md` for the full list with descriptions.
 
@@ -211,7 +210,7 @@ pnpm dev:worker
 # Terminal 3 — anything else
 ```
 
-Then open http://localhost:3000/copilot in a Windows browser. WSL2 forwards localhost transparently.
+Then open **http://localhost:3001/copilot** in a Windows browser (P1.12: pinned to :3001 in package.json; was :3000). WSL2 forwards localhost transparently.
 
 **Smoke checks** (all should pass before you call setup done):
 
@@ -233,7 +232,8 @@ Then open http://localhost:3000/copilot in a Windows browser. WSL2 forwards loca
 | Painfully slow `pnpm install` | Repo is on `/mnt/c/...`. Move it to `~/`. |
 | Playwright "browser not found" | Run `pnpm exec playwright install chromium` inside WSL. |
 | GPU not detected by Ollama | Latest NVIDIA driver on Windows; restart Ollama service. |
-| Chroma "connection refused" | Container stopped. `docker start chroma`. |
+| `/admin/health` shows Supabase pgvector red | Migration `0007_pgvector_kb.sql` hasn't been applied yet — paste it into the Supabase SQL editor. |
+| Audit narration but no Strategy synthesis | KB has no chunks — run `pnpm kb:reseed` (or `/admin/kb` → "Refresh now"). |
 | `node-gyp` build failures | `sudo apt install -y python3 make g++`. |
 
 ---

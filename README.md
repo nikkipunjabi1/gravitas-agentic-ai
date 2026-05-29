@@ -20,18 +20,20 @@ The agent is grounded in real Gravitas services (Experience Strategy & Design, P
 ## Read the docs in this order
 
 1. **[VISION.md](docs/VISION.md)** — why this exists, who it's for, what "good" looks like
-2. **[ROADMAP.md](docs/ROADMAP.md)** — phased delivery plan, MVP definition of done
+2. **[ROADMAP.md](docs/ROADMAP.md)** — what's shipped (M1–M6 + P1.11–P1.17) and what's still in the backlog
 3. **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** — stack, data flow, deployment topology
-4. **[AGENTS.md](docs/AGENTS.md)** — multi-agent graph, model routing (Ollama + Claude), tools
-5. **[UI_CONTRACT.md](docs/UI_CONTRACT.md)** — the Generative Canvas: how the agent renders UI
-6. **[BRANDING.md](docs/BRANDING.md)** — logo embedding, voice, audit report template
-7. **[ADMIN_PANEL.md](docs/ADMIN_PANEL.md)** — internal dashboard: spend, sessions, transcripts, health
-8. **[SETUP_WINDOWS.md](docs/SETUP_WINDOWS.md)** — WSL2 + Ollama + Node first-run
-9. **[CLAUDE.md](CLAUDE.md)** — instructions for Claude Code (conventions, guardrails, phasing)
+4. **[SESSION_FLOW.md](docs/SESSION_FLOW.md)** — what happens when a visitor sends a message: full sequence diagram + per-node breakdown + failure-path matrix
+5. **[AGENTS.md](docs/AGENTS.md)** — multi-agent graph, model routing (Ollama + Claude), tools
+6. **[PROMPTS.md](docs/PROMPTS.md)** — every system prompt in the codebase, with the admin-tunable key that overrides each
+7. **[UI_CONTRACT.md](docs/UI_CONTRACT.md)** — the Generative Canvas: how the agent renders UI
+8. **[BRANDING.md](docs/BRANDING.md)** — logo embedding, voice, audit report template
+9. **[ADMIN_PANEL.md](docs/ADMIN_PANEL.md)** — internal dashboard: spend, sessions, transcripts, health, settings
+10. **[SETUP_WINDOWS.md](docs/SETUP_WINDOWS.md)** — Node + Ollama + Playwright first-run (ChromaDB no longer required as of P1.17)
+11. **[CLAUDE.md](CLAUDE.md)** — instructions for Claude Code (conventions, guardrails, current state)
 
 ## Status
 
-**Docs approved.** Planning complete across vision, architecture, agents, UI contract, branding, admin panel, and Windows setup. **Phase 0 (Foundation) is the active phase** — Claude Code begins scaffolding on the developer's Windows + WSL2 box. See `docs/ROADMAP.md` for the active phase deliverables and Definition of Done.
+**Live pilot.** Phase 1 milestones M1–M6 shipped. Post-M6 polish batches P1.11–P1.17 also shipped: admin-tunable rate limits + branding + embed widget + agent prompts, request/response payload capture, Flow visualisation with Mermaid + payload expand-on-click, ChromaDB → Supabase pgvector migration with `/admin/kb/chunks` viewer. Running from a local laptop served at `ai.thisisgravitas.com` via Cloudflare Tunnel. See `docs/ROADMAP.md` for the running batch list.
 
 ## Stack at a glance
 
@@ -44,10 +46,10 @@ The agent is grounded in real Gravitas services (Experience Strategy & Design, P
 | Models — reasoning | Ollama / DeepSeek-R1 (local, free) |
 | Models — user-facing copy & strategy | Claude Sonnet 4.6 via Anthropic API |
 | Embeddings | Ollama / `nomic-embed-text` |
-| Vector store | ChromaDB (local) → Qdrant (when we outgrow it) |
-| Storage / auth | Supabase (free tier is fine for initial scale; upgrade only when limits hit) |
-| Hosting (dev/demo) | Self-hosted on Windows + WSL2 box, exposed via Cloudflare Tunnel (free). $0/mo. |
-| Hosting (production) | **Railway** — Next.js + crawl worker + Chroma in one project. ~$5–15/mo via the existing paid Railway account. See [ARCHITECTURE.md → Deployment paths](docs/ARCHITECTURE.md). |
+| Vector store | **Supabase `pgvector`** (as of P1.17 — replaces ChromaDB; no Docker dependency, browsable via Supabase Studio + `/admin/kb/chunks`) |
+| Storage / auth | Supabase (free tier covers vectors + structured storage in one place) |
+| Hosting (current pilot) | Self-hosted on Windows laptop, exposed via Cloudflare Tunnel (free) as `ai.thisisgravitas.com`. $0/mo. |
+| Hosting (production path) | **Railway** — Next.js + crawl worker in one project (no separate Chroma service needed any more). ~$5–10/mo. See [ARCHITECTURE.md → Deployment paths](docs/ARCHITECTURE.md). |
 | DNS / SSL / DDoS / Tunnel | Cloudflare free tier — sufficient, no upgrade needed. |
 
 See `ARCHITECTURE.md` for the full picture.

@@ -1,6 +1,13 @@
 # Architecture
 
-High-level system design. For the agent reasoning model, see `AGENTS.md`. For how the canvas renders, see `UI_CONTRACT.md`.
+High-level system design. For the agent reasoning model, see `AGENTS.md`. For how the canvas renders, see `UI_CONTRACT.md`. For the moment-by-moment data flow of a turn, see `SESSION_FLOW.md`.
+
+> **Important update — P1.17 (post-M6 polish).** The vector store moved from **ChromaDB → Supabase `pgvector`**. Everywhere this doc mentions Chroma / ChromaDB as a runtime service, read it as **the `kb_chunks` table in Supabase with the `vector(768)` column type and the `kb_chunks_search` RPC** (migration `0007_pgvector_kb.sql`). The Docker dependency is gone; chunks are browsable via Supabase Studio AND `/admin/kb/chunks?url=…`. Deployment topology drops one service.
+>
+> Other live-state notes:
+> - The dev port is **:3001** (not :3000) — Next.js wouldn't bind to 3000 reliably on the dev box; everything's pinned in `package.json`.
+> - Every visitor-facing surface (launcher text, colours, agent system prompts, KB sitemap + whitelist, rate limits, branding/contact) is admin-tunable from `/admin/settings` as of P1.16. The hardcoded constants in code are the fallback when no admin override is saved.
+> - `/embed.js` is a Next.js route handler (not a static file), so changes to embed colours / text from the admin panel propagate within ~60 seconds of saving (subject to Cloudflare cache).
 
 ---
 
@@ -48,7 +55,7 @@ High-level system design. For the agent reasoning model, see `AGENTS.md`. For ho
 - **Next.js on Vercel** for the user-facing app and the agent runtime. Streams beautifully, ships fast, free tier.
 - **Separate worker for Playwright** because headless browsers don't run on Vercel functions and crawls can take 10–30s. We do not want a chat request blocked by a crawl.
 - **Hybrid model layer** because Ollama is free and fast enough for reasoning, but Claude Sonnet 4.6 produces the user-facing voice we need. See `AGENTS.md` for routing rules.
-- **Supabase + ChromaDB** for free-tier vector and structured storage. Migrate to Qdrant if we outgrow Chroma; migrate Supabase off only if we hit limits.
+- **Supabase only** for both structured storage and vector storage (P1.17: `pgvector` extension on the same Postgres that hosts sessions/messages/etc.). Migrate to Qdrant only if pgvector hits a scale wall — irrelevant in Phase 1.
 
 ## Data flow — a typical session
 
@@ -130,7 +137,7 @@ gravitas-agentic-ai/
 | Streaming | Vercel AI SDK (`ai`) | Data Stream Protocol with custom data parts for `UIAction` |
 | Agent runtime | `@langchain/langgraph` (TS) | Stateful graph; persistence via Supabase checkpointer |
 | Validation | `zod` | At every external boundary |
-| Vector store | ChromaDB (self-hosted) | Migrate to Qdrant if needed |
+| Vector store | **Supabase `pgvector`** (P1.17) | Was ChromaDB; pgvector ships free in every Supabase project. Migrate to Qdrant only if pgvector hits a scale wall. |
 | Embeddings | Ollama / `nomic-embed-text` | Free, runs alongside Ollama |
 | LLM — reasoning | Ollama / DeepSeek-R1 | Local in dev, hosted Ollama-compatible endpoint in prod (or fallback to Claude Haiku) |
 | LLM — output | Anthropic Claude Sonnet 4.6 (`claude-sonnet-4-6`) | API |
