@@ -76,9 +76,11 @@ app.post("/crawl", async (req, reply) => {
     return;
   }
 
-  // ---- Run the crawl (Phase 0: stub) -----------------------------------
+  // ---- Run the crawl ---------------------------------------------------
   try {
-    const result: AuditResult = await runCrawl(guard.url, req.log);
+    const result: AuditResult = await runCrawl(guard.url, req.log, {
+      sessionId: parsed.data.sessionId ?? null,
+    });
     reply.code(200).send(result);
   } catch (err) {
     req.log.error({ err }, "crawl failed");

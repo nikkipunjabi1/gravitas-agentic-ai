@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { AuditResult, Accessibility, Performance, Semantic } from "./types.js";
+import { logWorkerCall } from "./call-log.js";
 
 /**
  * Lighthouse via Google PageSpeed Insights (PSI) API.
@@ -35,6 +36,8 @@ export interface PsiOptions {
   url: string;
   strategy?: "desktop" | "mobile";
   signal?: AbortSignal;
+  /** Optional session id — surfaces this PSI call in the admin timeline. */
+  sessionId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -81,6 +84,7 @@ export async function runLighthouseViaPsi(
   log: FastifyBaseLogger,
 ): Promise<AuditResult> {
   const startedAt = Date.now();
+  const sessionId = opts.sessionId ?? null;
   const apiKey = process.env.PAGESPEED_INSIGHTS_API_KEY;
 
   const params = new URLSearchParams({
@@ -114,50 +118,93 @@ export async function runLighthouseViaPsi(
 
   log.info({ url: opts.url, withKey: Boolean(apiKey) }, "psi: starting");
 
-  let res: Response;
+  // Track outcome so the finally block can write one row to model_calls
+  // regardless of which code path we exit through. Performance numbers from
+  // the parsed Lighthouse result populate the resultSummary when available.
+  let httpStatus: number | null = null;
+  let resultSummary = "";
+  let wasBlocked = false;
+  let auditResult: AuditResult | null = null;
+
   try {
-    res = await fetch(`${PSI_ENDPOINT}?${params.toString()}`, {
-      method: "GET",
-      signal: linkedSignal,
-      headers: { accept: "application/json" },
-    });
-  } catch (err) {
+    let res: Response;
+    try {
+      res = await fetch(`${PSI_ENDPOINT}?${params.toString()}`, {
+        method: "GET",
+        signal: linkedSignal,
+        headers: { accept: "application/json" },
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      wasBlocked = true;
+      if (timedOut) {
+        resultSummary = `timeout ${Math.round(PSI_TIMEOUT_MS / 1000)}s`;
+        throw new Error(
+          `psi: timed out after ${Math.round(PSI_TIMEOUT_MS / 1000)}s (PSI run did not finish in budget)`,
+        );
+      }
+      resultSummary = `network: ${(err as Error).message}`.slice(0, 120);
+      throw new Error(`psi: network ${(err as Error).message}`);
+    }
     clearTimeout(timer);
-    if (timedOut) {
+    httpStatus = res.status;
+
+    if (!res.ok) {
+      let detail = "";
+      try {
+        detail = (await res.text()).slice(0, 300);
+      } catch {
+        /* ignore */
+      }
+      wasBlocked = true;
+      resultSummary = `HTTP ${res.status}`;
+      throw new Error(`psi: HTTP ${res.status} ${detail}`);
+    }
+
+    const data = (await res.json()) as PsiResponse;
+
+    if (data.error) {
+      wasBlocked = true;
+      resultSummary = `error: ${data.error.message ?? "unknown"}`.slice(0, 120);
+      throw new Error(`psi: ${data.error.message ?? "unknown error"}`);
+    }
+    const lr = data.lighthouseResult;
+    if (!lr) {
+      wasBlocked = true;
+      resultSummary = "missing lighthouseResult";
+      throw new Error("psi: response missing lighthouseResult");
+    }
+    if (lr.runtimeError) {
+      wasBlocked = true;
+      resultSummary = `runtime ${lr.runtimeError.code ?? "?"}`.slice(0, 120);
       throw new Error(
-        `psi: timed out after ${Math.round(PSI_TIMEOUT_MS / 1000)}s (PSI run did not finish in budget)`,
+        `psi: lighthouse runtime ${lr.runtimeError.code ?? "?"}: ${lr.runtimeError.message ?? "?"}`,
       );
     }
-    throw new Error(`psi: network ${(err as Error).message}`);
-  }
-  clearTimeout(timer);
 
-  if (!res.ok) {
-    let detail = "";
-    try {
-      detail = (await res.text()).slice(0, 300);
-    } catch {
-      /* ignore */
-    }
-    throw new Error(`psi: HTTP ${res.status} ${detail}`);
-  }
-
-  const data = (await res.json()) as PsiResponse;
-
-  if (data.error) {
-    throw new Error(`psi: ${data.error.message ?? "unknown error"}`);
-  }
-  const lr = data.lighthouseResult;
-  if (!lr) {
-    throw new Error("psi: response missing lighthouseResult");
-  }
-  if (lr.runtimeError) {
-    throw new Error(
-      `psi: lighthouse runtime ${lr.runtimeError.code ?? "?"}: ${lr.runtimeError.message ?? "?"}`,
+    auditResult = mapPsiToAuditResult(opts.url, data, startedAt);
+    // Compact one-line summary visible in /admin: perf / a11y scores.
+    const perf = lr.categories?.performance?.score;
+    const a11y = lr.categories?.accessibility?.score;
+    resultSummary = `perf ${perf != null ? Math.round(perf * 100) : "?"} · a11y ${a11y != null ? Math.round(a11y * 100) : "?"}`;
+    return auditResult;
+  } finally {
+    await logWorkerCall(
+      {
+        sessionId,
+        node: "audit",
+        provider: "google-psi",
+        model: "lighthouse-v6",
+        purpose: "lighthouse",
+        latencyMs: Date.now() - startedAt,
+        wasBlocked,
+        resultSummary: httpStatus
+          ? `${httpStatus} · ${resultSummary}`
+          : resultSummary || "no-response",
+      },
+      log,
     );
   }
-
-  return mapPsiToAuditResult(opts.url, data, startedAt);
 }
 
 // ---------------------------------------------------------------------------

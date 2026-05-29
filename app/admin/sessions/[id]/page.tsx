@@ -47,6 +47,12 @@ export default async function SessionDetailPage({
             {session.id}
           </p>
         </div>
+        <Link
+          href={`/admin/sessions/${id}/flow`}
+          className="rounded-full border border-paper-edge px-3 py-1 text-xs text-ink-soft transition hover:border-ink-muted hover:text-ink"
+        >
+          View Flow →
+        </Link>
       </header>
 
       <div className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">

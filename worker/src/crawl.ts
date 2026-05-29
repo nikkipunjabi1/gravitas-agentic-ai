@@ -4,6 +4,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { Accessibility, AuditResult, ContentArchitecture, DesignSignals, Performance as PerformanceMetrics, Semantic, AIReadiness } from "./types.js";
 import { isPrivateAddress } from "./url-guard.js";
 import { runLighthouseViaPsi } from "./lighthouse.js";
+import { logWorkerCall } from "./call-log.js";
 
 /**
  * runCrawl — real Phase 1 implementation.
@@ -70,13 +71,15 @@ const REAL_CHROME_UA =
 export async function runCrawl(
   url: URL,
   log: FastifyBaseLogger,
+  opts: { sessionId?: string | null } = {},
 ): Promise<AuditResult> {
   const startedAt = Date.now();
-  log.info({ url: url.href }, "crawl: starting (PSI + Playwright, parallel)");
+  const sessionId = opts.sessionId ?? null;
+  log.info({ url: url.href, sessionId }, "crawl: starting (PSI + Playwright, parallel)");
 
   const [psiSettled, pwSettled] = await Promise.allSettled([
-    runLighthouseViaPsi({ url: url.href }, log),
-    tryPlaywrightCrawl(url, log),
+    runLighthouseViaPsi({ url: url.href, sessionId }, log),
+    tryPlaywrightCrawl(url, log, sessionId),
   ]);
 
   const psi = psiSettled.status === "fulfilled" ? psiSettled.value : null;
@@ -134,10 +137,39 @@ function stringifyErr(err: unknown): string {
 async function tryPlaywrightCrawl(
   url: URL,
   log: FastifyBaseLogger,
+  sessionId: string | null,
 ): Promise<AuditResult | null> {
+  const startedAt = Date.now();
   try {
-    return await playwrightCrawl(url, log);
+    const result = await playwrightCrawl(url, log);
+    await logWorkerCall(
+      {
+        sessionId,
+        node: "audit",
+        provider: "playwright",
+        model: "chromium-131",
+        purpose: "crawl",
+        latencyMs: Date.now() - startedAt,
+        wasBlocked: false,
+        resultSummary: `${result.contentArchitecture.wordCount} words · h1×${result.semantic.headingCounts.h1}`,
+      },
+      log,
+    );
+    return result;
   } catch (err) {
+    await logWorkerCall(
+      {
+        sessionId,
+        node: "audit",
+        provider: "playwright",
+        model: "chromium-131",
+        purpose: "crawl",
+        latencyMs: Date.now() - startedAt,
+        wasBlocked: true,
+        resultSummary: stringifyErr(err).slice(0, 120) || "failed",
+      },
+      log,
+    );
     log.warn(
       { url: url.href, err: stringifyErr(err) },
       "crawl: Playwright failed (expected on WAF-protected sites)",
