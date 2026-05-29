@@ -153,10 +153,14 @@ export async function runIngest(opts: IngestOptions = {}): Promise<IngestStats> 
   };
 
   try {
-    const collectionId = await ensureCollection();
+    if (!supabase) {
+      throw new Error(
+        "pgvector ingest requires SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY — set them in .env.local and restart the worker",
+      );
+    }
     await runConcurrent(todo, FETCH_CONCURRENCY, async (entry) => {
       try {
-        const result = await processOne(entry, collectionId, supabase, log);
+        const result = await processOne(entry, supabase, log);
         stats.pagesFetched += 1;
         stats.pagesEmbedded += result.chunkCount > 0 ? 1 : 0;
         stats.chunksEmbedded += result.chunkCount;
@@ -409,8 +413,7 @@ interface ProcessResult {
 
 async function processOne(
   entry: SitemapEntry,
-  collectionId: string,
-  supabase: SupabaseClient | null,
+  supabase: SupabaseClient,
   log: IngestOptions["log"] & object,
 ): Promise<ProcessResult> {
   // 1. Fetch
@@ -469,20 +472,18 @@ async function processOne(
       contentHash,
     },
   }));
-  await chromaUpsert(collectionId, items);
+  await pgvectorUpsert(supabase, entry.loc, items);
 
   // 7. Update manifest
-  if (supabase) {
-    await supabase.from("kb_documents").upsert({
-      url: entry.loc,
-      last_modified: entry.lastmod ?? null,
-      content_hash: contentHash,
-      chunk_count: chunks.length,
-      indexed_at: new Date().toISOString(),
-      status: "indexed",
-      error_message: null,
-    });
-  }
+  await supabase.from("kb_documents").upsert({
+    url: entry.loc,
+    last_modified: entry.lastmod ?? null,
+    content_hash: contentHash,
+    chunk_count: chunks.length,
+    indexed_at: new Date().toISOString(),
+    status: "indexed",
+    error_message: null,
+  });
 
   return { chunkCount: chunks.length, contentHash };
 }
@@ -622,35 +623,17 @@ async function embedAll(texts: string[]): Promise<number[][]> {
 }
 
 // ---------------------------------------------------------------------------
-// Chroma — small v2 REST helpers, mirrored from the agent app's lib/kb/client.
-// They live here too because workspaces don't share src/ imports.
+// pgvector upsert (P1.17 — replaces ChromaDB)
+//
+// Writes chunks straight into Supabase kb_chunks. The agent reads via
+// the kb_chunks_search RPC from src/lib/kb/pgvector.ts. No external
+// service to start; the chunks become inspectable in Supabase Studio
+// AND the new /admin/kb chunks viewer.
 // ---------------------------------------------------------------------------
 
-async function ensureCollection(): Promise<string> {
-  const base = process.env.CHROMA_URL ?? "http://localhost:8000";
-  const tenant = process.env.CHROMA_TENANT ?? "default_tenant";
-  const database = process.env.CHROMA_DATABASE ?? "default_database";
-  const name = process.env.CHROMA_KB_COLLECTION ?? "gravitas-kb";
-  const path = `/api/v2/tenants/${encodeURIComponent(tenant)}/databases/${encodeURIComponent(database)}/collections`;
-  const res = await fetchWithTimeout(`${base}${path}`, REQUEST_TIMEOUT_MS, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      name,
-      get_or_create: true,
-      metadata: { source: "gravitas-copilot" },
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`chroma get_or_create → HTTP ${res.status}: ${text.slice(0, 200)}`);
-  }
-  const data = (await res.json()) as { id: string };
-  return data.id;
-}
-
-async function chromaUpsert(
-  collectionId: string,
+async function pgvectorUpsert(
+  supabase: SupabaseClient,
+  documentUrl: string,
   items: {
     id: string;
     embedding: number[];
@@ -659,23 +642,25 @@ async function chromaUpsert(
   }[],
 ): Promise<void> {
   if (items.length === 0) return;
-  const base = process.env.CHROMA_URL ?? "http://localhost:8000";
-  const tenant = process.env.CHROMA_TENANT ?? "default_tenant";
-  const database = process.env.CHROMA_DATABASE ?? "default_database";
-  const path = `/api/v2/tenants/${encodeURIComponent(tenant)}/databases/${encodeURIComponent(database)}/collections/${collectionId}/upsert`;
-  const res = await fetchWithTimeout(`${base}${path}`, REQUEST_TIMEOUT_MS, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      ids: items.map((i) => i.id),
-      embeddings: items.map((i) => i.embedding),
-      documents: items.map((i) => i.document),
-      metadatas: items.map((i) => i.metadata),
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`chroma upsert → HTTP ${res.status}: ${text.slice(0, 200)}`);
+  // Wipe existing chunks for this document first — reseed semantics.
+  // Calls the SECURITY DEFINER RPC so we don't need DELETE policy noise.
+  await supabase.rpc("kb_chunks_delete_for_document", { p_document_url: documentUrl });
+
+  // Bulk upsert. PostgREST stringifies arrays for vector columns as a
+  // JSON array; pgvector accepts that. Conflict target is the id PK so
+  // re-running ingest on a partial fail doesn't accumulate duplicates.
+  const rows = items.map((i) => ({
+    id: i.id,
+    document_url: documentUrl,
+    content: i.document,
+    embedding: i.embedding,
+    metadata: i.metadata,
+  }));
+  const { error } = await supabase
+    .from("kb_chunks")
+    .upsert(rows, { onConflict: "id" });
+  if (error) {
+    throw new Error(`pgvector upsert → ${error.message}`);
   }
 }
 

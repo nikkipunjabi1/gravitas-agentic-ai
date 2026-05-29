@@ -21,7 +21,7 @@ export default async function HealthPage() {
   const checks = [
     await checkAnthropic(),
     await checkOllama(),
-    await checkChroma(),
+    await checkPgvector(),
     workerResult.check,
     derivePlaywrightCheck(workerResult.workerHealth),
   ];
@@ -143,19 +143,21 @@ async function checkOllama(): Promise<Check> {
   return result;
 }
 
-async function checkChroma(): Promise<Check> {
-  const base = process.env.CHROMA_URL ?? "http://localhost:8000";
-  const result = await timed("Chroma", `${base}/api/v2/heartbeat`, async () => {
-    const res = await fetchWithTimeout(`${base}/api/v2/heartbeat`, 2000);
-    if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
-    return { ok: true, message: "Heartbeat OK" };
-  });
+async function checkPgvector(): Promise<Check> {
+  const result = await timed(
+    "Supabase pgvector",
+    "kb_chunks_search RPC",
+    async () => {
+      const { countChunks } = await import("@/lib/kb/pgvector");
+      const n = await countChunks();
+      return { ok: true, message: `${n} chunks indexed` };
+    },
+  );
   if (!result.ok) {
     return {
       ...result,
       hint:
-        "Run ChromaDB locally via Docker. Persistent data is stored in a volume so vectors survive restarts.",
-      hintCmd: "docker run -p 8000:8000 -v chroma-data:/data chromadb/chroma",
+        "Apply migration 0007_pgvector_kb.sql in the Supabase SQL editor. That enables the pgvector extension and creates the kb_chunks table the agent reads from.",
     };
   }
   return result;

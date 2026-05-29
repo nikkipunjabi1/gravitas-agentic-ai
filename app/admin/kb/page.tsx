@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   getKbSettings,
   getKbNotificationSettings,
@@ -8,6 +9,7 @@ import {
   computeNextDue,
   CADENCE_OPTIONS,
 } from "@/server/admin/kb";
+import { countChunks } from "@/lib/kb/pgvector";
 import { isSupabaseConfigured } from "@/server/supabase/client";
 import { KbControls } from "./kb-controls";
 import { cn } from "@/lib/utils/cn";
@@ -37,13 +39,14 @@ export default async function AdminKbPage() {
     );
   }
 
-  const [settings, notifications, currentRun, lastCompleted, recentRuns, indexedDocs] = await Promise.all([
+  const [settings, notifications, currentRun, lastCompleted, recentRuns, indexedDocs, totalChunks] = await Promise.all([
     getKbSettings(),
     getKbNotificationSettings(),
     getCurrentRun(),
     getLastCompletedRun(),
     listKbRuns(20),
     listKbDocuments(100),
+    countChunks(),
   ]);
 
   const nextDue = computeNextDue(
@@ -107,11 +110,11 @@ export default async function AdminKbPage() {
           </h2>
           <span className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
             {indexedDocs.length} {indexedDocs.length === 1 ? "page" : "pages"} ·{" "}
-            {indexedDocs.reduce((s, d) => s + d.chunkCount, 0)} chunks in Chroma
+            {totalChunks} chunks in Supabase pgvector
           </span>
         </div>
         <p className="text-xs text-ink-soft">
-          Each row = one URL ingested into the <code className="font-mono text-ink">{settings.sitemapUrl.replace(/^https?:\/\//, "").split("/")[0]}</code> KB. Chunks are stored as vectors in ChromaDB; this table is the manifest the worker diffs against on each incremental refresh.
+          Each row = one URL ingested into the <code className="font-mono text-ink">{settings.sitemapUrl.replace(/^https?:\/\//, "").split("/")[0]}</code> KB. Click any URL to inspect its individual chunks (text + embedding metadata).
         </p>
         <div className="overflow-x-auto rounded-xl border border-paper-edge bg-paper">
           <table className="w-full text-sm">
@@ -134,14 +137,23 @@ export default async function AdminKbPage() {
                 indexedDocs.map((d) => (
                   <tr key={d.url} className="text-ink">
                     <Td>
-                      <a
-                        href={d.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-mono text-xs text-ink-soft underline decoration-paper-edge underline-offset-2 hover:text-ink hover:decoration-ink-muted"
-                      >
-                        {d.url.replace(/^https?:\/\//, "")}
-                      </a>
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/admin/kb/chunks?url=${encodeURIComponent(d.url)}`}
+                          className="font-mono text-xs text-ink underline decoration-paper-edge underline-offset-2 hover:decoration-ink-muted"
+                        >
+                          {d.url.replace(/^https?:\/\//, "")}
+                        </Link>
+                        <a
+                          href={d.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label="Open page in new tab"
+                          className="font-mono text-[10px] text-ink-muted/70 hover:text-ink-soft"
+                        >
+                          ↗
+                        </a>
+                      </div>
                     </Td>
                     <Td align="right" mono>{d.chunkCount}</Td>
                     <Td mono>
