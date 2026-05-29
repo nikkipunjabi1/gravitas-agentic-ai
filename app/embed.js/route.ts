@@ -50,11 +50,27 @@ export async function GET() {
     height: embed.height,
   });
 
+  // Priority: admin-saved values ALWAYS win over page-level overrides.
+  //
+  // Rationale: the entire point of P1.16 is admin-as-source-of-truth for
+  // bespoke deployments. If GTM-injected GravitasCopilot were allowed to
+  // override admin (the previous merge order), the admin Settings UI
+  // would look like it worked but produce no visible change on sites
+  // whose GTM tag still has an inline config block — which is exactly
+  // the failure mode we hit on initial rollout.
+  //
+  // Page-level config still functions as a FALLBACK for any key admin
+  // hasn't set — but in practice getEmbedConfig() always returns a full
+  // record (hardcoded defaults fill any unset key), so page-level
+  // overrides become effectively no-ops. That's intentional. If a
+  // per-page override is needed in future, route it through a different
+  // mechanism (query string, data attribute) rather than re-flipping
+  // this priority.
   const prelude =
     "/* Gravitas Co-Pilot — admin-injected defaults (P1.16) */\n" +
     "(function(){var admin=" +
     adminDefaults +
-    ";var page=window.GravitasCopilot||{};window.GravitasCopilot=Object.assign({},admin,page);})();\n";
+    ";var page=window.GravitasCopilot||{};window.GravitasCopilot=Object.assign({},page,admin);})();\n";
 
   return new Response(prelude + template, {
     headers: {
