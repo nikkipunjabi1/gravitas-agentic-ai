@@ -1,6 +1,11 @@
 import "server-only";
 import { getServerRouter } from "@/server/model-router";
 import { kbSearch } from "@/agents/tools/kb-search";
+import {
+  getAgentPrompts,
+  getBrandingConfig,
+  resolvePrompt,
+} from "@/server/runtime-config";
 import type { DataStreamWriter } from "@/lib/stream/data-stream";
 import type { VisitorContext } from "@/agents/state";
 
@@ -154,6 +159,20 @@ The visitor's message is off-topic for Gravitas. EXACTLY two sentences:
 
 NEVER answer the off-topic question, even partially. Refusal + pivot only.`;
 
+/**
+ * Runtime-resolved prompt set — each value is the admin override (with
+ * branding placeholders substituted) OR the hardcoded fallback defined
+ * above. Built fresh at the top of each runDiscovery() call.
+ */
+interface PromptBundle {
+  voiceBase: string;
+  problem: string;
+  kbGrounded: string;
+  kbEmpty: string;
+  meta: string;
+  offtopic: string;
+}
+
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
@@ -163,6 +182,23 @@ export async function runDiscovery(
   input: DiscoveryInput,
 ): Promise<DiscoveryOutput> {
   const router = getServerRouter();
+
+  // ---- 0. Resolve runtime prompts -------------------------------------
+  // Admin overrides from /admin/settings/prompts win when set; otherwise
+  // we use the hardcoded constants defined at module top. Each override
+  // is run through interpolatePrompt to substitute {{brand_name}} etc.
+  const [promptOverrides, branding] = await Promise.all([
+    getAgentPrompts(),
+    getBrandingConfig(),
+  ]);
+  const prompts: PromptBundle = {
+    voiceBase: resolvePrompt(promptOverrides.discoveryVoiceBase, branding) ?? VOICE_SYSTEM_BASE,
+    problem: resolvePrompt(promptOverrides.discoveryProblem, branding) ?? PROBLEM_SYSTEM,
+    kbGrounded: resolvePrompt(promptOverrides.discoveryKbGrounded, branding) ?? KB_GROUNDED_SYSTEM,
+    kbEmpty: resolvePrompt(promptOverrides.discoveryKbEmpty, branding) ?? KB_EMPTY_SYSTEM,
+    meta: resolvePrompt(promptOverrides.discoveryMeta, branding) ?? META_SYSTEM,
+    offtopic: resolvePrompt(promptOverrides.discoveryOfftopic, branding) ?? OFFTOPIC_SYSTEM,
+  };
 
   // ---- 1. Classify intent (heuristic — Phase 1 latency optimisation) ----
   // Previously called an LLM (Ollama Qwen3 with Haiku fallback) here, but
@@ -185,17 +221,17 @@ export async function runDiscovery(
   let assistantText: string;
   switch (intent) {
     case "gravitas-question":
-      assistantText = await respondGravitasQuestion(router, ctx, input);
+      assistantText = await respondGravitasQuestion(router, ctx, input, prompts);
       break;
     case "meta-question":
-      assistantText = await respondTemplated(router, ctx, input, META_SYSTEM);
+      assistantText = await respondTemplated(router, ctx, input, prompts.meta);
       break;
     case "off-topic":
-      assistantText = await respondTemplated(router, ctx, input, OFFTOPIC_SYSTEM);
+      assistantText = await respondTemplated(router, ctx, input, prompts.offtopic);
       break;
     case "problem-statement":
     default:
-      assistantText = await respondProblemStatement(router, ctx, input, visitorPatch);
+      assistantText = await respondProblemStatement(router, ctx, input, visitorPatch, prompts);
       break;
   }
 
@@ -267,6 +303,7 @@ async function respondGravitasQuestion(
   router: ReturnType<typeof getServerRouter>,
   ctx: DiscoveryContext,
   input: DiscoveryInput,
+  prompts: PromptBundle,
 ): Promise<string> {
   const hits = await kbSearch({
     query: input.userMessage,
@@ -277,8 +314,8 @@ async function respondGravitasQuestion(
 
   const system =
     hits.length > 0
-      ? `${KB_GROUNDED_SYSTEM}\n\nKB CHUNKS:\n${formatHits(hits)}`
-      : KB_EMPTY_SYSTEM;
+      ? `${prompts.kbGrounded}\n\nKB CHUNKS:\n${formatHits(hits)}`
+      : prompts.kbEmpty;
 
   return streamComposition(router, ctx, input, system);
 }
@@ -288,6 +325,7 @@ async function respondProblemStatement(
   ctx: DiscoveryContext,
   input: DiscoveryInput,
   visitorPatch: Partial<VisitorContext>,
+  prompts: PromptBundle,
 ): Promise<string> {
   const projected = { ...input.visitor, ...visitorPatch };
   const known: string[] = [];
@@ -297,7 +335,7 @@ async function respondProblemStatement(
   if (projected.submittedUrl) known.push(`submittedUrl="${projected.submittedUrl}"`);
 
   const system =
-    `${PROBLEM_SYSTEM}\n\nKnown so far: ${known.length > 0 ? known.join(", ") : "(nothing yet)"}.`;
+    `${prompts.problem}\n\nKnown so far: ${known.length > 0 ? known.join(", ") : "(nothing yet)"}.`;
 
   return streamComposition(router, ctx, input, system);
 }

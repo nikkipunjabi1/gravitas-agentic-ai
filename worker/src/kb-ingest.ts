@@ -10,6 +10,7 @@ import WebSocket from "ws";
 import * as cheerio from "cheerio";
 import { z } from "zod";
 import { sendIngestNotification, type KbRunSummary } from "./email.js";
+import { getWorkerSetting } from "./settings.js";
 
 /**
  * KB ingest pipeline — Phase 1.
@@ -41,14 +42,14 @@ import { sendIngestNotification, type KbRunSummary } from "./email.js";
  */
 
 // We crawl EVERYTHING in the sitemap by default and reject only obvious
-// noise via KB_EXCLUDE_RX below. The previous allowlist was too restrictive
-// — Gravitas's site structure has top-level pages like
-// /experience-design-strategy and /capability-enablement that don't sit
-// under /services, so the allowlist silently dropped roughly a third of
-// the sitemap (35 entries in, ~20 ingested).
+// noise via KB_EXCLUDE_RX below.
 //
-// If you ever need to tighten this up (e.g. to skip a specific path family),
-// add the pattern to KB_EXCLUDE_RX rather than re-introducing the allowlist.
+// P1.16: optionally restrict to a whitelist of path prefixes that the
+// admin defines in /admin/settings (kb_whitelist_patterns). When that
+// list is empty / unset, behaviour falls back to "include everything not
+// caught by KB_EXCLUDE_RX". This means a bespoke deployment for another
+// client can lock the KB to a few sections of their site without code
+// changes.
 const KB_EXCLUDE_RX =
   /(privacy|cookie|policy|terms|legal|search|tag|paginate|sitemap|feed|rss|atom)(\/|$|\?)/i;
 
@@ -90,7 +91,16 @@ export interface IngestOptions {
 export async function runIngest(opts: IngestOptions = {}): Promise<IngestStats> {
   const startedAt = Date.now();
   const log = opts.log ?? defaultLogger();
-  const sitemapUrl = opts.sitemapUrl ?? process.env.GRAVITAS_SITEMAP_URL ?? "https://thisisgravitas.com/sitemap.xml";
+  // Priority order for sitemap URL: explicit opt → admin setting → env → built-in default.
+  // Same for the whitelist patterns: admin setting → empty (= include everything not denied).
+  const fallbackSitemap =
+    process.env.GRAVITAS_SITEMAP_URL ?? "https://thisisgravitas.com/sitemap.xml";
+  const sitemapUrl =
+    opts.sitemapUrl ?? (await getWorkerSetting("kb_sitemap_url", fallbackSitemap));
+  const whitelistPatterns = await getWorkerSetting<string[]>(
+    "kb_whitelist_patterns",
+    [],
+  );
   const supabase = getSupabase();
   const mode = opts.reseed ? "reseed" : "incremental";
   const triggeredBy = opts.triggeredBy ?? "cli";
@@ -113,9 +123,14 @@ export async function runIngest(opts: IngestOptions = {}): Promise<IngestStats> 
     throw err;
   }
 
-  // 2. Filter by whitelist
-  const whitelisted = entries.filter(entryAllowed);
-  log.info(`[kb-ingest] sitemap has ${entries.length} entries; ${whitelisted.length} whitelisted`);
+  // 2. Filter via admin whitelist (if any) + the always-on denylist.
+  const whitelisted = entries.filter((e) => entryAllowed(e, whitelistPatterns));
+  log.info(
+    `[kb-ingest] sitemap has ${entries.length} entries; ${whitelisted.length} allowed` +
+      (whitelistPatterns.length > 0
+        ? ` (whitelist: ${whitelistPatterns.join(", ")})`
+        : " (no whitelist — denylist only)"),
+  );
 
   // 3. Diff against kb_documents (skip in reseed mode)
   const existingManifest = supabase ? await loadManifest(supabase) : new Map<string, ManifestRow>();
@@ -347,7 +362,7 @@ async function parseSitemap(xml: string): Promise<SitemapEntry[]> {
   return all;
 }
 
-function entryAllowed(entry: SitemapEntry): boolean {
+function entryAllowed(entry: SitemapEntry, whitelist: string[]): boolean {
   let parsed: URL;
   try {
     parsed = new URL(entry.loc);
@@ -355,10 +370,16 @@ function entryAllowed(entry: SitemapEntry): boolean {
     return false;
   }
   const path = parsed.pathname;
-  // Deny-list only — privacy/legal/admin/feed paths get filtered. Everything
-  // else in the sitemap (service pages, case studies, insights, contact,
-  // careers, flagship offerings like /firstmakers) is fair KB content.
-  return !KB_EXCLUDE_RX.test(path);
+  // Always-on denylist — privacy / legal / admin / feed paths filtered.
+  if (KB_EXCLUDE_RX.test(path)) return false;
+  // Empty whitelist → admin hasn't constrained the crawl → allow anything
+  // that survived the denylist. Otherwise the path must match at least one
+  // whitelist entry (exact match OR prefix match like "/work" → /work/*).
+  if (whitelist.length === 0) return true;
+  return whitelist.some((p) => {
+    if (p === "/") return path === "/";
+    return path === p || path.startsWith(`${p}/`);
+  });
 }
 
 // ---------------------------------------------------------------------------

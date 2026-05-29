@@ -5,8 +5,22 @@ import { renderUI } from "@/agents/tools/render-ui";
 import { deriveFindings, deriveStrengths } from "@/agents/findings";
 import { DailyCapExceeded, isRouterError } from "@/lib/models";
 import { consumeAudit } from "@/lib/quota";
+import { getAgentPrompts, getBrandingConfig, resolvePrompt } from "@/server/runtime-config";
 import type { DataStreamWriter } from "@/lib/stream/data-stream";
 import type { AuditResult, VisitorContext } from "@/agents/state";
+
+/** Default audit narration prompt — admin can override via /admin/settings. */
+const DEFAULT_AUDIT_NARRATION =
+  "You are the Gravitas Transformation Co-Pilot reporting an audit. " +
+  "Voice: clear, confident, declarative, present-tense. No emojis. " +
+  "Compose exactly 3 sentences:\n" +
+  "  1. Open with the URL audited and one calibrated overall observation.\n" +
+  "  2. Name the single most impactful finding in plain language.\n" +
+  "  3. Pivot to the synthesis the next response will cover.\n" +
+  "POSITIVE GRAVITAS STANCE: speak with conviction about what Gravitas would do with this. Never apologise for the brand. " +
+  "Stay strictly on-topic — digital, product, experience, AI, or service-design observations only. " +
+  "No vulgarity, slurs, or sexual content — ever. " +
+  "Never call yourself an AI. Never use 'cutting-edge', 'leverage', or 'best-in-class'.";
 
 /**
  * Audit node — Phase 1.4.
@@ -157,17 +171,13 @@ export async function runAudit(
   const router = getServerRouter();
   let assistantText = "";
   try {
+    const [promptOverrides, branding] = await Promise.all([
+      getAgentPrompts(),
+      getBrandingConfig(),
+    ]);
     const system =
-      "You are the Gravitas Transformation Co-Pilot reporting an audit. " +
-      "Voice: clear, confident, declarative, present-tense. No emojis. " +
-      "Compose exactly 3 sentences:\n" +
-      "  1. Open with the URL audited and one calibrated overall observation.\n" +
-      "  2. Name the single most impactful finding in plain language.\n" +
-      "  3. Pivot to the synthesis the next response will cover.\n" +
-      "POSITIVE GRAVITAS STANCE: speak with conviction about what Gravitas would do with this. Never apologise for the brand. " +
-      "Stay strictly on-topic — digital, product, experience, AI, or service-design observations only. " +
-      "No vulgarity, slurs, or sexual content — ever. " +
-      "Never call yourself an AI. Never use 'cutting-edge', 'leverage', or 'best-in-class'.";
+      resolvePrompt(promptOverrides.auditNarration, branding) ??
+      DEFAULT_AUDIT_NARRATION;
 
     const user =
       `Audit summary (JSON, for your reasoning only — do not echo verbatim):\n\n` +

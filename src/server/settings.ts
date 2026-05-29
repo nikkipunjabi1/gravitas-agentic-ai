@@ -11,64 +11,101 @@ import { getSupabaseAdminClient } from "@/server/supabase/client";
  *
  *   system_settings (this file)  values an admin will reasonably want to
  *                                change at runtime without a redeploy —
- *                                rate-limit caps, cost-cap thresholds (P2),
- *                                content moderation knobs (P2).
+ *                                rate-limit caps, embed widget styling,
+ *                                KB sitemap, agent system prompts.
  *
  * Reads are cached app-side for SETTINGS_TTL_MS so we don't hammer Postgres
  * on every chat turn. Writes invalidate the cache process-locally; other
  * Next.js instances pick up the change within ~TTL.
  *
- * Fallback: when Supabase isn't configured (dev clones with no env vars),
- * every read returns the seeded default below. The app stays functional.
+ * Fallback: when Supabase isn't configured (dev clones with no env vars)
+ * OR the key is unset OR malformed, every read returns the caller-supplied
+ * default. The app stays functional with zero seeded settings — admins
+ * opt-in to a value by saving it.
  */
 
 const SETTINGS_TTL_MS = 60_000;
 
-interface CachedValue<T> {
-  value: T;
+interface CachedValue {
+  value: unknown;
   expiresAt: number;
 }
 
-const cache = new Map<string, CachedValue<unknown>>();
+const cache = new Map<string, CachedValue>();
 
 /**
- * Built-in defaults — used both for the dev fallback (no Supabase) and as
- * the typed seed in src/lib/quota/ip-quota.ts. Keep this aligned with the
- * INSERT statement in supabase/migrations/0005_system_settings.sql.
+ * Keys are declared centrally — gives TypeScript a closed list for the
+ * admin form, and avoids typos at call sites.
+ *
+ * Grouping below mirrors the admin Settings tabs (`/admin/settings`).
  */
-export const SETTING_DEFAULTS = {
-  ip_daily_turn_limit: 20,
-  ip_daily_audit_limit: 3,
+export const SETTING_KEYS = {
+  // ---- Rate limits (existing — P1.11) -------------------------------
+  ip_daily_turn_limit: "ip_daily_turn_limit",
+  ip_daily_audit_limit: "ip_daily_audit_limit",
+
+  // ---- Branding (P1.16) ---------------------------------------------
+  /** Used in prompts as {{brand_name}}, in headers, and in admin chrome. */
+  branding_brand_name: "branding_brand_name",
+  branding_contact_name: "branding_contact_name",
+  branding_contact_role: "branding_contact_role",
+  branding_contact_email: "branding_contact_email",
+  branding_contact_phone: "branding_contact_phone",
+
+  // ---- Embed widget (P1.16) -----------------------------------------
+  embed_launcher_text: "embed_launcher_text",
+  embed_primary_color: "embed_primary_color",
+  embed_text_color: "embed_text_color",
+  embed_position: "embed_position", // "bottom-right" | "bottom-left"
+  embed_width: "embed_width",
+  embed_height: "embed_height",
+
+  // ---- KB ingest (P1.16) --------------------------------------------
+  kb_sitemap_url: "kb_sitemap_url",
+  kb_whitelist_patterns: "kb_whitelist_patterns", // string[]
+
+  // ---- Agent prompts (P1.16) ----------------------------------------
+  prompt_discovery_voice_base: "prompt_discovery_voice_base",
+  prompt_discovery_problem: "prompt_discovery_problem",
+  prompt_discovery_kb_grounded: "prompt_discovery_kb_grounded",
+  prompt_discovery_kb_empty: "prompt_discovery_kb_empty",
+  prompt_discovery_meta: "prompt_discovery_meta",
+  prompt_discovery_offtopic: "prompt_discovery_offtopic",
+  prompt_audit_narration: "prompt_audit_narration",
+  prompt_strategy_json: "prompt_strategy_json",
+  prompt_strategy_narration: "prompt_strategy_narration",
+  prompt_output_close: "prompt_output_close",
 } as const;
 
-export type SettingKey = keyof typeof SETTING_DEFAULTS;
+export type SettingKey = keyof typeof SETTING_KEYS;
 
 export interface SettingRow {
   key: SettingKey;
-  value: number;
+  value: unknown;
   description: string | null;
   updatedAt: string;
   updatedBy: string | null;
 }
 
 /**
- * Read a single setting. Returns the cached value when available; falls
- * back to the seeded default when Supabase isn't configured OR the row is
- * absent. Always resolves — never throws — so quota checks never block
- * on a transient Postgres outage.
+ * Read a single setting with a typed fallback. The fallback shape decides
+ * the return type — admins can store any JSON-serialisable value.
+ *
+ * If the row is missing OR the value is null OR the cached value's type
+ * doesn't match (object vs array vs number etc.), we return the fallback.
+ * This makes "delete a setting to revert to default" trivial — just remove
+ * the row.
  */
-export async function getSetting<K extends SettingKey>(
-  key: K,
-): Promise<number> {
+export async function getSetting<T>(key: SettingKey, fallback: T): Promise<T> {
   const now = Date.now();
   const cached = cache.get(key);
   if (cached && cached.expiresAt > now) {
-    return cached.value as number;
+    return coerce(cached.value, fallback);
   }
 
   const client = getSupabaseAdminClient();
   if (!client) {
-    return cacheAndReturn(key, SETTING_DEFAULTS[key]);
+    return cacheAndReturn(key, fallback);
   }
 
   const { data, error } = await client
@@ -76,93 +113,95 @@ export async function getSetting<K extends SettingKey>(
     .select("value")
     .eq("key", key)
     .maybeSingle();
-  if (error || !data) {
-    return cacheAndReturn(key, SETTING_DEFAULTS[key]);
+  if (error || !data || data.value == null) {
+    return cacheAndReturn(key, fallback);
   }
-  const raw = data.value;
-  const parsed = typeof raw === "number" ? raw : Number(raw);
-  if (!Number.isFinite(parsed)) {
-    return cacheAndReturn(key, SETTING_DEFAULTS[key]);
+  return cacheAndReturn(key, coerce(data.value, fallback));
+}
+
+/**
+ * Coerce a raw JSONB value into the fallback's type. Numbers and strings
+ * cross-coerce when possible; structurally-mismatched values return the
+ * fallback to avoid blowing up callers.
+ */
+function coerce<T>(raw: unknown, fallback: T): T {
+  if (raw == null) return fallback;
+  // Number fallback expects a number — accept numeric strings.
+  if (typeof fallback === "number") {
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw as T;
+    if (typeof raw === "string") {
+      const n = Number(raw);
+      if (Number.isFinite(n)) return n as T;
+    }
+    return fallback;
   }
-  return cacheAndReturn(key, parsed);
+  if (typeof fallback === "string") {
+    if (typeof raw === "string") return raw as T;
+    return fallback;
+  }
+  if (typeof fallback === "boolean") {
+    if (typeof raw === "boolean") return raw as T;
+    return fallback;
+  }
+  if (Array.isArray(fallback)) {
+    if (Array.isArray(raw)) return raw as T;
+    return fallback;
+  }
+  if (typeof fallback === "object" && fallback !== null) {
+    if (typeof raw === "object" && !Array.isArray(raw)) return raw as T;
+    return fallback;
+  }
+  return raw as T;
 }
 
 /**
  * Read all known settings in one round-trip — used by the admin Settings
- * page so a single render gets every editable knob with its description +
- * audit metadata.
+ * page so a single render gets every editable knob.
  */
 export async function listSettings(): Promise<SettingRow[]> {
   const client = getSupabaseAdminClient();
-  if (!client) {
-    return Object.entries(SETTING_DEFAULTS).map(([k, v]) => ({
-      key: k as SettingKey,
-      value: v,
-      description: null,
-      updatedAt: new Date(0).toISOString(),
-      updatedBy: null,
-    }));
-  }
+  if (!client) return [];
   const { data, error } = await client
     .from("system_settings")
     .select("key, value, description, updated_at, updated_by")
     .order("key", { ascending: true });
-  if (error || !data) {
-    return [];
-  }
+  if (error || !data) return [];
   return data
     .filter(
       (row): row is { key: string; value: unknown; description: string | null; updated_at: string; updated_by: string | null } =>
         row !== null && typeof row.key === "string",
     )
     .filter((row): row is { key: SettingKey; value: unknown; description: string | null; updated_at: string; updated_by: string | null } =>
-      (row.key as SettingKey) in SETTING_DEFAULTS,
+      (row.key as SettingKey) in SETTING_KEYS,
     )
-    .map((row) => {
-      const raw = row.value;
-      const parsed = typeof raw === "number" ? raw : Number(raw);
-      return {
-        key: row.key,
-        value: Number.isFinite(parsed) ? parsed : SETTING_DEFAULTS[row.key],
-        description: row.description,
-        updatedAt: row.updated_at,
-        updatedBy: row.updated_by,
-      };
-    });
+    .map((row) => ({
+      key: row.key,
+      value: row.value,
+      description: row.description,
+      updatedAt: row.updated_at,
+      updatedBy: row.updated_by,
+    }));
 }
 
 /**
- * Write a setting. Validates the value against a per-key allowed range
- * before persisting — admins shouldn't be able to set the audit limit to
- * 9999 by accident. Returns the new value (so callers can echo it back).
- *
- * Cache is invalidated for this key on the current process. Other
- * processes pick it up within SETTINGS_TTL_MS.
+ * Write a setting. JSONB stores anything serialisable; per-key validation
+ * lives at the API boundary (app/api/admin/settings/route.ts).
  */
-export async function setSetting<K extends SettingKey>(
-  key: K,
-  value: number,
+export async function setSetting(
+  key: SettingKey,
+  value: unknown,
   updatedBy: string | null,
-): Promise<number> {
-  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
-    throw new Error(`setSetting: ${key} requires a non-negative integer`);
-  }
-  const max = SETTING_MAXIMUMS[key];
-  if (value > max) {
-    throw new Error(`setSetting: ${key} exceeds maximum allowed value (${max})`);
-  }
-
+): Promise<unknown> {
   const client = getSupabaseAdminClient();
   if (!client) {
     throw new Error("setSetting: Supabase not configured");
   }
-
   const { error } = await client
     .from("system_settings")
     .upsert(
       {
         key,
-        value: value as unknown as object, // stored as jsonb
+        value: value as unknown as object,
         updated_by: updatedBy,
       },
       { onConflict: "key" },
@@ -170,29 +209,14 @@ export async function setSetting<K extends SettingKey>(
   if (error) {
     throw new Error(`setSetting: ${error.message}`);
   }
-
   cache.delete(key);
   return value;
 }
 
 /**
- * Hard caps so an admin typo can't accidentally turn the cap to 1 million.
- * Numbers picked to be "obviously too high for a cap" — they exist as guard
- * rails, not as targets.
- */
-const SETTING_MAXIMUMS: Record<SettingKey, number> = {
-  ip_daily_turn_limit: 1000,
-  ip_daily_audit_limit: 100,
-};
-
-/**
  * Reset today's IP quota counters across all hashes. Used by the admin
- * "Reset today's quota" button — useful for demos that hit the cap. Returns
- * the number of rows that were deleted (admins like seeing a confirmation
- * number).
- *
- * Implemented as a Postgres function so it can run in one round-trip even
- * if the table has millions of rows.
+ * "Reset today's quota" button. Unchanged from P1.11; lives here so
+ * settings + reset are co-located.
  */
 export async function resetTodayQuota(): Promise<number> {
   const client = getSupabaseAdminClient();
@@ -204,7 +228,7 @@ export async function resetTodayQuota(): Promise<number> {
   return typeof data === "number" ? data : 0;
 }
 
-function cacheAndReturn(key: string, value: number): number {
+function cacheAndReturn<T>(key: string, value: T): T {
   cache.set(key, { value, expiresAt: Date.now() + SETTINGS_TTL_MS });
   return value;
 }

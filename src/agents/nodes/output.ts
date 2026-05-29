@@ -2,6 +2,11 @@ import "server-only";
 import { getServerRouter } from "@/server/model-router";
 import { DailyCapExceeded, isRouterError } from "@/lib/models";
 import { getClosingContact } from "@/lib/branding";
+import {
+  getAgentPrompts,
+  getBrandingConfig,
+  resolvePrompt,
+} from "@/server/runtime-config";
 import type { DataStreamWriter } from "@/lib/stream/data-stream";
 import type {
   AuditResult,
@@ -57,6 +62,14 @@ export async function runOutput(
   const router = getServerRouter();
   const contact = getClosingContact();
 
+  // Resolve runtime prompt — admin override wins over hardcoded.
+  const [promptOverrides, branding] = await Promise.all([
+    getAgentPrompts(),
+    getBrandingConfig(),
+  ]);
+  const closePrompt =
+    resolvePrompt(promptOverrides.outputClose, branding) ?? OUTPUT_SYSTEM;
+
   const factSheet = JSON.stringify(
     {
       url: input.audit?.url ?? null,
@@ -80,7 +93,7 @@ export async function runOutput(
       node: "output",
       sessionId: ctx.sessionId,
       messages: [
-        { role: "system", content: OUTPUT_SYSTEM },
+        { role: "system", content: closePrompt },
         { role: "user", content: "Fact sheet:\n" + factSheet },
       ],
       maxTokens: 320,

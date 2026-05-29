@@ -59,8 +59,8 @@ const QUOTA_BYPASSED =
 export async function getLimits(): Promise<{ turnLimit: number; auditLimit: number }> {
   try {
     const [turnLimit, auditLimit] = await Promise.all([
-      getSetting("ip_daily_turn_limit"),
-      getSetting("ip_daily_audit_limit"),
+      getSetting("ip_daily_turn_limit", ENV_TURN_FLOOR),
+      getSetting("ip_daily_audit_limit", ENV_AUDIT_FLOOR),
     ]);
     return { turnLimit, auditLimit };
   } catch {

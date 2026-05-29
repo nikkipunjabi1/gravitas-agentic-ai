@@ -1,30 +1,82 @@
+import {
+  getBrandingConfig,
+  getEmbedConfig,
+  getKbConfig,
+  getAgentPrompts,
+} from "@/server/runtime-config";
 import { listSettings } from "@/server/settings";
-import { SettingsForm } from "./settings-form";
+import { SettingsTabs } from "./settings-tabs";
 
 /**
- * /admin/settings — runtime knobs.
+ * /admin/settings — bespoke deployment control panel.
  *
- * Reads the canonical setting rows server-side (so the form always boots
- * with the live values) and hands them to a small client form for editing.
- * Mutations go through /api/admin/settings → setSetting(), which validates
- * + persists. A "Reset today's quota" affordance is also wired here for
- * demo unblocking.
+ * Every value here is hot-tunable from the UI (writes to system_settings,
+ * cached for 60s, propagates to the agent + embed + KB ingest without a
+ * redeploy). Five sections:
+ *
+ *   Rate limits     — per-IP turn + audit caps; "Reset today's quota" helper.
+ *   Branding        — brand name + named contact (substituted into prompts
+ *                     as {{brand_name}}, {{contact_name}}, etc.).
+ *   Embed widget    — launcher text + colours + position + dimensions for
+ *                     the /embed.js floating chat.
+ *   Knowledge base  — sitemap URL + optional whitelist of path prefixes
+ *                     to restrict the KB ingest.
+ *   Agent prompts   — full system prompts for every agent node. Unset =
+ *                     code defaults; saved = override. Supports {{var}}
+ *                     placeholders for branding values.
  */
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const settings = await listSettings();
+  // Load every section's current effective values in parallel — server
+  // component, single render, no client fetches.
+  const [branding, embed, kb, prompts, rawSettings] = await Promise.all([
+    getBrandingConfig(),
+    getEmbedConfig(),
+    getKbConfig(),
+    getAgentPrompts(),
+    listSettings(),
+  ]);
+
+  // Build a lookup of stored-value metadata (updatedAt, updatedBy) keyed
+  // by setting key — used to show "last changed by X at Y" hints in the
+  // form. Values from runtime-config helpers are already effective values
+  // (override OR fallback) so we don't read from rawSettings for those.
+  const metaByKey = new Map(rawSettings.map((r) => [r.key, r]));
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <header className="space-y-1">
         <h1 className="font-display text-2xl font-semibold text-ink">Settings</h1>
         <p className="text-sm text-ink-soft">
-          Runtime knobs that take effect within ~60 seconds of saving. No redeploy required.
+          Runtime configuration. Every change takes effect within ~60 seconds of
+          saving — no redeploy. Empty / unset values fall back to the code defaults.
         </p>
       </header>
 
-      <SettingsForm settings={settings} />
+      <SettingsTabs
+        branding={branding}
+        embed={embed}
+        kb={kb}
+        prompts={prompts}
+        // rate-limit values come from the unified listSettings call
+        rateLimits={{
+          turnLimit:
+            (rawSettings.find((r) => r.key === "ip_daily_turn_limit")?.value as
+              | number
+              | undefined) ?? 20,
+          auditLimit:
+            (rawSettings.find((r) => r.key === "ip_daily_audit_limit")?.value as
+              | number
+              | undefined) ?? 3,
+        }}
+        meta={Object.fromEntries(
+          Array.from(metaByKey.entries()).map(([k, v]) => [
+            k,
+            { updatedAt: v.updatedAt, updatedBy: v.updatedBy },
+          ]),
+        )}
+      />
     </div>
   );
 }

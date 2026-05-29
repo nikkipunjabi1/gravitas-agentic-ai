@@ -4,6 +4,11 @@ import { getServerRouter } from "@/server/model-router";
 import { renderUI } from "@/agents/tools/render-ui";
 import { kbSearch } from "@/agents/tools/kb-search";
 import { DailyCapExceeded, isRouterError } from "@/lib/models";
+import {
+  getAgentPrompts,
+  getBrandingConfig,
+  resolvePrompt,
+} from "@/server/runtime-config";
 import type { DataStreamWriter } from "@/lib/stream/data-stream";
 import type {
   AuditResult,
@@ -132,6 +137,16 @@ export async function runStrategy(
 ): Promise<StrategyNodeOutput> {
   const router = getServerRouter();
 
+  // ---- Resolve runtime prompts -------------------------------------------
+  const [promptOverrides, branding] = await Promise.all([
+    getAgentPrompts(),
+    getBrandingConfig(),
+  ]);
+  const jsonPrompt =
+    resolvePrompt(promptOverrides.strategyJson, branding) ?? STRATEGY_SYSTEM;
+  const narrationPrompt =
+    resolvePrompt(promptOverrides.strategyNarration, branding) ?? NARRATION_SYSTEM;
+
   // ---- KB grounding (best-effort) ----------------------------------------
   const groundingQuery =
     input.visitor.namedProblem?.slice(0, 240) ??
@@ -152,7 +167,7 @@ export async function runStrategy(
   // ---- Compose structured JSON via Claude --------------------------------
   let claudeJson: ClaudeStrategyJson | null = null;
   try {
-    claudeJson = await composeClaudeStrategy(router, ctx, input, kbChunks);
+    claudeJson = await composeClaudeStrategy(router, ctx, input, kbChunks, jsonPrompt);
   } catch (err) {
     if (err instanceof DailyCapExceeded) throw err;
     if (isRouterError(err)) {
@@ -230,6 +245,7 @@ export async function runStrategy(
     strategy,
     input,
     kbChunks,
+    narrationPrompt,
   );
 
   return { strategy, assistantText };
@@ -304,6 +320,7 @@ async function composeClaudeStrategy(
   ctx: StrategyNodeCtx,
   input: StrategyNodeInput,
   kbChunks: Awaited<ReturnType<typeof kbSearch>>,
+  jsonSystemPrompt: string,
 ): Promise<ClaudeStrategyJson | null> {
   const auditSummary = summariseAudit(input.audit);
   const kbBlock =
@@ -334,7 +351,11 @@ async function composeClaudeStrategy(
 
   // Try once; if parse fails, try one more time with stricter wording.
   for (let attempt = 0; attempt < 2; attempt++) {
-    const sys = attempt === 0 ? STRATEGY_SYSTEM : STRATEGY_SYSTEM + `\n\nRETRY — previous response failed JSON validation. Output ONLY the JSON object with no surrounding text.`;
+    const sys =
+      attempt === 0
+        ? jsonSystemPrompt
+        : jsonSystemPrompt +
+          `\n\nRETRY — previous response failed JSON validation. Output ONLY the JSON object with no surrounding text.`;
     const result = await router.complete({
       purpose: "voice-heavy",
       node: "strategy",
@@ -539,6 +560,7 @@ async function streamSynthesisNarration(
   strategy: StrategyResult,
   input: StrategyNodeInput,
   kbChunks: Awaited<ReturnType<typeof kbSearch>>,
+  narrationSystemPrompt: string,
 ): Promise<string> {
   const topMust = strategy.roadmap.must[0];
   const factSheet = JSON.stringify(
@@ -562,7 +584,7 @@ async function streamSynthesisNarration(
       node: "strategy",
       sessionId: ctx.sessionId,
       messages: [
-        { role: "system", content: NARRATION_SYSTEM },
+        { role: "system", content: narrationSystemPrompt },
         {
           role: "user",
           content:
