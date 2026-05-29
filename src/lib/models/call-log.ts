@@ -27,6 +27,19 @@ export interface ModelCallRow {
   wasBlocked: boolean;
   /** ISO 8601. Set by the router; the sink does not invent timestamps. */
   ts: string;
+  /**
+   * Provider-shape snapshot of the request handed in. Stored as JSONB so
+   * the admin Flow page can render it on click. For Anthropic + Ollama:
+   * `{ system, messages, options }`. May be null when capture is disabled
+   * (e.g. in tests).
+   */
+  requestPayload?: unknown;
+  /**
+   * Provider-shape snapshot of the response. For Anthropic + Ollama:
+   * `{ text, inputTokens, outputTokens }`. Streaming responses are
+   * captured post-aggregation (final text). May be null on hard errors.
+   */
+  responsePayload?: unknown;
 }
 
 // ---------------------------------------------------------------------------

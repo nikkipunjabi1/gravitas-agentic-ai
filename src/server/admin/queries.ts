@@ -197,6 +197,66 @@ export async function listRecentOpeners(limit = 50): Promise<RecentOpenerRow[]> 
   return out;
 }
 
+/**
+ * Paginated version of listRecentOpeners. Returns ~pageSize unique-session
+ * opener messages plus a total-unique-sessions count for the page navigator.
+ *
+ * Why a second function instead of replacing the original: the embed widget
+ * + Phase 2 features still want the raw "latest N openers" API. Keeping
+ * both is cheap (the page-aware version overfetches a touch more to
+ * compensate for cross-page dedupe edge cases).
+ */
+export interface PaginatedRecentOpeners {
+  rows: RecentOpenerRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export async function listRecentOpenersPaged(
+  page: number,
+  pageSize: number,
+): Promise<PaginatedRecentOpeners> {
+  const client = getSupabaseAdminClient();
+  if (!client) return { rows: [], total: 0, page, pageSize };
+
+  // Total unique sessions with a user message. Used by the paginator. We
+  // count sessions with at least one user message rather than total
+  // messages — the latter would over-count sessions with N visitor turns.
+  const totalRes = await client
+    .from("sessions")
+    .select("id", { count: "exact", head: true })
+    .not("id", "is", null);
+  const total = totalRes.count ?? 0;
+
+  // Range-based pagination on the sorted-by-ts result. We overfetch by 2x
+  // to give the in-memory deduper headroom; in practice each session has a
+  // user-message ratio close to 1, so the actual fan-out is small.
+  const overfetch = pageSize * 3;
+  const offset = (page - 1) * pageSize;
+  const { data, error } = await client
+    .from("messages")
+    .select("session_id, content, ts")
+    .eq("role", "user")
+    .order("ts", { ascending: false })
+    .range(offset, offset + overfetch - 1);
+  if (error) return { rows: [], total, page, pageSize };
+
+  const seen = new Set<string>();
+  const rows: RecentOpenerRow[] = [];
+  for (const row of (data ?? []) as Array<{
+    session_id: string;
+    content: string;
+    ts: string;
+  }>) {
+    if (seen.has(row.session_id)) continue;
+    seen.add(row.session_id);
+    rows.push({ sessionId: row.session_id, content: row.content, ts: row.ts });
+    if (rows.length >= pageSize) break;
+  }
+  return { rows, total, page, pageSize };
+}
+
 // ---------------------------------------------------------------------------
 // /admin/sessions table
 // ---------------------------------------------------------------------------
@@ -312,6 +372,8 @@ export interface SessionDetail {
     latencyMs: number | null;
     wasBlocked: boolean;
     ts: string;
+    requestPayload: unknown;
+    responsePayload: unknown;
   }>;
   uiActions: Array<{
     id: string;
@@ -395,6 +457,8 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
       latency_ms: number | null;
       was_blocked: boolean;
       ts: string;
+      request_payload: unknown;
+      response_payload: unknown;
     }>).map((c) => ({
       id: c.id,
       node: c.node,
@@ -407,6 +471,8 @@ export async function getSessionDetail(sessionId: string): Promise<SessionDetail
       latencyMs: c.latency_ms,
       wasBlocked: c.was_blocked,
       ts: c.ts,
+      requestPayload: c.request_payload,
+      responsePayload: c.response_payload,
     })),
     uiActions: ((uiRes.data ?? []) as Array<{
       id: string;

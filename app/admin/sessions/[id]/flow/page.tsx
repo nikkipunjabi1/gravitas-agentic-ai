@@ -307,35 +307,12 @@ function NodeCard({ bucket }: { bucket: NodeBucket }) {
       {bucket.modelCalls.length > 0 ? (
         <section className="mt-3">
           <h3 className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
-            External calls
+            External calls — click any row to see request + response
           </h3>
           <ul className="mt-1.5 space-y-1">
             {bucket.modelCalls.map((c) => (
-              <li
-                key={c.id}
-                className="flex items-baseline justify-between gap-3 text-xs"
-              >
-                <div className="flex items-baseline gap-2 truncate">
-                  <ProviderTag provider={c.provider} />
-                  <code className="truncate font-mono text-ink">{c.model}</code>
-                  <span className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
-                    {c.purpose}
-                  </span>
-                </div>
-                <div className="flex shrink-0 items-center gap-2 font-mono text-[10px] text-ink-muted">
-                  {c.inputTokens != null && c.outputTokens != null ? (
-                    <span>
-                      in {c.inputTokens} · out {c.outputTokens}
-                    </span>
-                  ) : null}
-                  <span>{formatMs(c.latencyMs)}</span>
-                  {c.costUsd > 0 ? <span>${c.costUsd.toFixed(4)}</span> : null}
-                  {c.wasBlocked ? (
-                    <span className="rounded-full bg-severity-critical/15 px-1.5 text-[10px] text-severity-critical">
-                      blocked
-                    </span>
-                  ) : null}
-                </div>
+              <li key={c.id}>
+                <ExternalCallRow call={c} />
               </li>
             ))}
           </ul>
@@ -379,6 +356,125 @@ function NodeCard({ bucket }: { bucket: NodeBucket }) {
   );
 }
 
+/**
+ * Single external-call row, expandable to show the captured request +
+ * response payloads. Uses `<details>` so we don't need a client component
+ * just for accordion state — the whole page stays a server render.
+ *
+ * Payload contents are provider-shape (see worker/src/call-log.ts +
+ * src/lib/models/router.ts). For Claude turns: full system prompt +
+ * conversation messages + truncated reply. For PSI: URL + strategy →
+ * Lighthouse category scores. For Playwright: URL → headings, word
+ * count, design fingerprints. Everything is JSON-pretty-printed so an
+ * admin can copy/paste into a debugger.
+ */
+function ExternalCallRow({
+  call,
+}: {
+  call: {
+    id: string;
+    provider: string;
+    model: string;
+    purpose: string;
+    latencyMs: number | null;
+    costUsd: number;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    wasBlocked: boolean;
+    requestPayload: unknown;
+    responsePayload: unknown;
+  };
+}) {
+  const hasPayload =
+    call.requestPayload != null || call.responsePayload != null;
+  return (
+    <details className="group rounded-lg border border-paper-edge bg-paper-soft/30 transition open:bg-paper-soft/60">
+      <summary
+        className={cn(
+          "flex cursor-pointer items-baseline justify-between gap-3 px-2 py-1.5 text-xs",
+          "list-none [&::-webkit-details-marker]:hidden",
+        )}
+      >
+        <div className="flex items-baseline gap-2 truncate">
+          <span
+            className="font-mono text-[9px] text-ink-muted/60 group-open:rotate-90 inline-block transition"
+            aria-hidden="true"
+          >
+            ▸
+          </span>
+          <ProviderTag provider={call.provider} />
+          <code className="truncate font-mono text-ink">{call.model}</code>
+          <span className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
+            {call.purpose}
+          </span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 font-mono text-[10px] text-ink-muted">
+          {call.inputTokens != null && call.outputTokens != null ? (
+            <span>
+              in {call.inputTokens} · out {call.outputTokens}
+            </span>
+          ) : null}
+          <span>{formatMs(call.latencyMs)}</span>
+          {call.costUsd > 0 ? <span>${call.costUsd.toFixed(4)}</span> : null}
+          {call.wasBlocked ? (
+            <span className="rounded-full bg-severity-critical/15 px-1.5 text-[10px] text-severity-critical">
+              blocked
+            </span>
+          ) : null}
+        </div>
+      </summary>
+      <div className="space-y-3 border-t border-paper-edge bg-paper px-3 py-3">
+        {!hasPayload ? (
+          <p className="text-xs text-ink-muted">
+            No payload captured for this call (older session — payloads are
+            stored from P1.15 onward).
+          </p>
+        ) : (
+          <>
+            <PayloadBlock label="Request" payload={call.requestPayload} />
+            <PayloadBlock label="Response" payload={call.responsePayload} />
+          </>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function PayloadBlock({
+  label,
+  payload,
+}: {
+  label: string;
+  payload: unknown;
+}) {
+  if (payload == null) {
+    return (
+      <div>
+        <p className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
+          {label}
+        </p>
+        <p className="mt-1 text-xs text-ink-muted">— null —</p>
+      </div>
+    );
+  }
+  let serialised: string;
+  try {
+    serialised = JSON.stringify(payload, null, 2);
+  } catch {
+    serialised = String(payload);
+  }
+  return (
+    <div>
+      <p className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
+        {label}
+      </p>
+      <pre className="mt-1 max-h-96 overflow-auto rounded-md bg-ink/5 px-3 py-2 font-mono text-[11px] leading-relaxed text-ink">
+        {serialised}
+      </pre>
+    </div>
+  );
+}
+
 function ProviderTag({ provider }: { provider: string }) {
   const styles: Record<string, string> = {
     anthropic: "bg-violet-100 text-violet-900",
@@ -419,6 +515,8 @@ function toModelCalls<
     inputTokens: number | null;
     outputTokens: number | null;
     wasBlocked: boolean;
+    requestPayload: unknown;
+    responsePayload: unknown;
   },
 >(rows: T[]): T[] {
   return rows;

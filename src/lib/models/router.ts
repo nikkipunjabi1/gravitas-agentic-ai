@@ -100,6 +100,8 @@ export class ModelRouter {
       latencyMs: result.latencyMs,
       wasBlocked: false,
       ts: new Date().toISOString(),
+      requestPayload: buildRequestPayload(opts),
+      responsePayload: buildResponsePayload(result),
     });
 
     return { ...result, purpose: loggedPurpose };
@@ -147,6 +149,8 @@ export class ModelRouter {
           latencyMs: final.latencyMs,
           wasBlocked: false,
           ts: new Date().toISOString(),
+          requestPayload: buildRequestPayload(opts),
+          responsePayload: buildResponsePayload(final),
         });
         return final;
       })
@@ -182,6 +186,18 @@ export class ModelRouter {
       latencyMs: result.latencyMs,
       wasBlocked: false,
       ts: new Date().toISOString(),
+      // Capture the input texts (truncated) and the resulting vector
+      // dimensions. We deliberately DON'T store the full 768-float vectors
+      // — too noisy for admin inspection, and reconstructable from
+      // the input if needed.
+      requestPayload: {
+        texts: (opts.texts ?? []).map((t) => truncate(t, 4000)),
+      },
+      responsePayload: {
+        vectorCount: result.vectors.length,
+        vectorDimensions: result.vectors[0]?.length ?? null,
+        inputTokens: result.inputTokens,
+      },
     });
     return result;
   }
@@ -373,8 +389,60 @@ export class ModelRouter {
       latencyMs: 0,
       wasBlocked: true,
       ts: new Date().toISOString(),
+      // Even on a blocked attempt, capture what was about to be sent so
+      // the admin can see "what triggered the cap" at a glance.
+      requestPayload: buildRequestPayload(opts),
+      responsePayload: null,
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Payload capture helpers — P1.15
+//
+// Snapshots the request + response into the shape stored in
+// model_calls.request_payload / response_payload. Truncates long strings
+// so the JSONB column never balloons; the admin Flow page displays this
+// data verbatim, so admins shouldn't have to scroll through 60KB system
+// prompts to find the user message.
+// ---------------------------------------------------------------------------
+
+const MAX_MESSAGE_CHARS = 12_000; // ~3K tokens — enough for system + recent turns
+const MAX_RESPONSE_CHARS = 8_000;
+
+function buildRequestPayload(opts: CompleteOptions): unknown {
+  return {
+    messages: (opts.messages ?? []).map((m) => ({
+      role: m.role,
+      content: truncate(m.content, MAX_MESSAGE_CHARS),
+    })),
+    options: {
+      maxTokens: opts.maxTokens ?? null,
+      temperature: opts.temperature ?? null,
+    },
+  };
+}
+
+function buildResponsePayload(result: {
+  text: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  latencyMs: number;
+}): unknown {
+  return {
+    text: truncate(result.text, MAX_RESPONSE_CHARS),
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+    costUsd: result.costUsd,
+    latencyMs: result.latencyMs,
+  };
+}
+
+function truncate(s: string, max: number): string {
+  if (!s) return s;
+  if (s.length <= max) return s;
+  return s.slice(0, max - 32) + `\n…[truncated; original ${s.length} chars]`;
 }
 
 // ---------------------------------------------------------------------------

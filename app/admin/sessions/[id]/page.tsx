@@ -159,23 +159,56 @@ function buildTimeline(
   return out;
 }
 
+/**
+ * Visual treatment by event kind — keeps long sessions scannable:
+ *
+ *   Visitor message    →  right-aligned ink bubble (chat-style)
+ *   Assistant message  →  left-aligned paper bubble (chat-style)
+ *   Model call         →  thin muted row, no card chrome — telemetry
+ *   UI action emitted  →  tiny accent pill, inline
+ *
+ * The model_call + ui_action rows are intentionally compact so the
+ * conversation reads top-to-bottom without telemetry shouting over it.
+ * For full inspection of model calls (request/response payloads), use
+ * the "View Flow →" link in the header — that page has the click-to-
+ * expand rows.
+ */
 function TimelineEvent({ event }: { event: TimelineEvent }) {
   const ts = new Date(event.ts).toLocaleTimeString();
 
   if (event.kind === "message") {
     const isUser = event.role === "user";
     return (
-      <li className="rounded-xl border border-paper-edge bg-paper p-3">
-        <div className="flex items-center justify-between gap-3">
-          <span className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
-            {isUser ? "💬 visitor" : "🤖 assistant"}
-            {event.emittedByNode ? ` · ${event.emittedByNode}` : ""}
-          </span>
-          <span className="font-mono text-[10px] text-ink-muted">{ts}</span>
+      <li className={cn("flex w-full", isUser ? "justify-end" : "justify-start")}>
+        <div
+          className={cn(
+            "max-w-[78%] rounded-2xl px-4 py-3",
+            isUser
+              ? "bg-ink text-paper"
+              : "border border-paper-edge bg-paper text-ink",
+          )}
+        >
+          <div
+            className={cn(
+              "flex items-center justify-between gap-3 font-mono text-[9px] uppercase tracking-widest",
+              isUser ? "text-paper/60" : "text-ink-muted",
+            )}
+          >
+            <span>
+              {isUser ? "visitor" : "assistant"}
+              {event.emittedByNode ? ` · ${event.emittedByNode}` : ""}
+            </span>
+            <span>{ts}</span>
+          </div>
+          <p
+            className={cn(
+              "mt-1.5 whitespace-pre-wrap text-sm leading-relaxed",
+              isUser ? "text-paper" : "text-ink",
+            )}
+          >
+            {event.content}
+          </p>
         </div>
-        <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-ink">
-          {event.content}
-        </p>
       </li>
     );
   }
@@ -184,40 +217,79 @@ function TimelineEvent({ event }: { event: TimelineEvent }) {
     return (
       <li
         className={cn(
-          "rounded-xl border bg-paper p-3",
-          event.wasBlocked ? "border-severity-critical/30" : "border-paper-edge",
+          "flex items-center justify-between gap-3 border-l-2 pl-3 py-1 text-[11px]",
+          event.wasBlocked
+            ? "border-severity-critical/50 text-severity-critical"
+            : "border-paper-edge text-ink-muted",
         )}
       >
-        <div className="flex items-center justify-between gap-3">
-          <span className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
-            ⚙️ model · {event.provider} · {event.model}
-            {event.node ? ` · ${event.node}` : ""}
-            {event.wasBlocked ? " · BLOCKED" : ""}
+        <div className="flex items-center gap-2 truncate">
+          <span className="font-mono text-[9px] uppercase tracking-widest opacity-70">
+            model
           </span>
-          <span className="font-mono text-[10px] text-ink-muted">{ts}</span>
+          <ProviderChip provider={event.provider} />
+          <code className="truncate font-mono text-ink-soft">{event.model}</code>
+          {event.node ? (
+            <span className="font-mono text-[9px] uppercase tracking-widest opacity-60">
+              {event.node}
+            </span>
+          ) : null}
+          <span className="font-mono text-[9px] uppercase tracking-widest opacity-60">
+            {event.purpose}
+          </span>
+          {event.wasBlocked ? (
+            <span className="rounded-full bg-severity-critical/15 px-1.5 text-[9px] uppercase tracking-wide">
+              blocked
+            </span>
+          ) : null}
         </div>
-        <p className="mt-1 text-xs text-ink-soft">
-          <span className="font-mono">{event.purpose}</span>
-          {event.inputTokens !== null ? ` · in ${event.inputTokens}` : ""}
-          {event.outputTokens !== null ? ` · out ${event.outputTokens}` : ""}
-          {` · $${event.costUsd.toFixed(4)}`}
-          {event.latencyMs !== null ? ` · ${event.latencyMs}ms` : ""}
-        </p>
+        <div className="flex shrink-0 items-center gap-2 font-mono text-[10px]">
+          {event.inputTokens !== null && event.outputTokens !== null ? (
+            <span>
+              in {event.inputTokens} · out {event.outputTokens}
+            </span>
+          ) : null}
+          {event.latencyMs !== null ? <span>{formatLatency(event.latencyMs)}</span> : null}
+          {event.costUsd > 0 ? <span>${event.costUsd.toFixed(4)}</span> : null}
+          <span className="opacity-70">{ts}</span>
+        </div>
       </li>
     );
   }
 
   return (
-    <li className="rounded-xl border border-accent/30 bg-accent/5 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
-          🎨 ui-action · {event.actionType}
-        </span>
-        <span className="font-mono text-[10px] text-ink-muted">{ts}</span>
-      </div>
-      <p className="mt-0.5 font-mono text-[10px] text-ink-muted">id {event.actionId.slice(0, 8)}</p>
+    <li className="flex items-center gap-2 pl-3 py-0.5 text-[11px] text-ink-muted">
+      <span className="font-mono text-[9px] uppercase tracking-widest opacity-70">canvas</span>
+      <span className="rounded-full bg-accent/15 px-2 py-0.5 font-mono text-[10px] text-accent">
+        {event.actionType}
+      </span>
+      <span className="ml-auto font-mono text-[10px] opacity-70">{ts}</span>
     </li>
   );
+}
+
+function ProviderChip({ provider }: { provider: string }) {
+  const styles: Record<string, string> = {
+    anthropic: "bg-violet-100 text-violet-900",
+    ollama: "bg-emerald-100 text-emerald-900",
+    "google-psi": "bg-blue-100 text-blue-900",
+    playwright: "bg-amber-100 text-amber-900",
+  };
+  return (
+    <span
+      className={cn(
+        "rounded-full px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest",
+        styles[provider] ?? "bg-ink/10 text-ink-soft",
+      )}
+    >
+      {provider}
+    </span>
+  );
+}
+
+function formatLatency(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 // ---------------------------------------------------------------------------

@@ -32,6 +32,11 @@ export class SupabaseCallLog implements CallLog {
       latency_ms: row.latencyMs,
       was_blocked: row.wasBlocked,
       ts: row.ts,
+      // P1.15 — capture provider-shape payloads so the admin Flow page
+      // can render request + response on click. JSONB columns added by
+      // migration 0006_model_call_payloads.sql.
+      request_payload: row.requestPayload ?? null,
+      response_payload: row.responsePayload ?? null,
     });
     if (error) {
       // eslint-disable-next-line no-console

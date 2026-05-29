@@ -125,6 +125,7 @@ export async function runLighthouseViaPsi(
   let resultSummary = "";
   let wasBlocked = false;
   let auditResult: AuditResult | null = null;
+  let responseSnapshot: Record<string, unknown> | null = null;
 
   try {
     let res: Response;
@@ -186,7 +187,24 @@ export async function runLighthouseViaPsi(
     // Compact one-line summary visible in /admin: perf / a11y scores.
     const perf = lr.categories?.performance?.score;
     const a11y = lr.categories?.accessibility?.score;
+    const bp = lr.categories?.["best-practices"]?.score;
+    const seo = lr.categories?.seo?.score;
     resultSummary = `perf ${perf != null ? Math.round(perf * 100) : "?"} · a11y ${a11y != null ? Math.round(a11y * 100) : "?"}`;
+    // Capture a compact Lighthouse snapshot for the admin Flow page.
+    // We deliberately don't store the full PSI response (it can be 1–2 MB);
+    // the score summary + audit IDs that fired flags is the useful part.
+    responseSnapshot = {
+      lighthouseVersion: lr.lighthouseVersion ?? null,
+      fetchTime: lr.fetchTime ?? null,
+      finalUrl: lr.finalUrl ?? null,
+      categories: {
+        performance: perf,
+        accessibility: a11y,
+        bestPractices: bp,
+        seo,
+      },
+      runWarnings: lr.runWarnings ?? [],
+    };
     return auditResult;
   } finally {
     await logWorkerCall(
@@ -201,6 +219,15 @@ export async function runLighthouseViaPsi(
         resultSummary: httpStatus
           ? `${httpStatus} · ${resultSummary}`
           : resultSummary || "no-response",
+        requestPayload: {
+          endpoint: PSI_ENDPOINT,
+          method: "GET",
+          url: opts.url,
+          strategy: opts.strategy ?? "desktop",
+          hasApiKey: Boolean(apiKey),
+        },
+        responsePayload:
+          responseSnapshot ?? { httpStatus, error: resultSummary || "no-response" },
       },
       log,
     );

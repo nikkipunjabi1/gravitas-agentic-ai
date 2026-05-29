@@ -1,16 +1,27 @@
 import Link from "next/link";
-import { listRecentOpeners } from "@/server/admin/queries";
+import { listRecentOpenersPaged } from "@/server/admin/queries";
+import { cn } from "@/lib/utils/cn";
 
 export const dynamic = "force-dynamic";
 
+const PAGE_SIZE = 25;
+
 /**
- * /admin/queries — recent visitor opener messages.
+ * /admin/queries — paginated list of session opener messages.
  *
- * Phase 1: a flat list of the latest 100 first-messages. Phase 2 adds topic
- * clustering (Ollama nightly job) + search.
+ * URL-driven `?page=N` pagination so admin links are bookmarkable and the
+ * Back button works naturally. Default page size 25 — small enough to scan
+ * on one screen, large enough that you don't paginate constantly.
  */
-export default async function QueriesPage() {
-  const queries = await listRecentOpeners(100);
+export default async function QueriesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const sp = await searchParams;
+  const page = Math.max(1, sp.page ? Number(sp.page) : 1);
+  const { rows, total } = await listRecentOpenersPaged(page, PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="space-y-5">
@@ -18,7 +29,7 @@ export default async function QueriesPage() {
         <div className="flex items-baseline justify-between gap-3">
           <h1 className="font-display text-2xl font-semibold text-ink">Visitor queries</h1>
           <span className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
-            {queries.length} {queries.length === 1 ? "query" : "queries"}
+            {total} {total === 1 ? "session" : "sessions"} · page {page} / {totalPages}
           </span>
         </div>
         <p className="text-sm text-ink-soft">
@@ -29,12 +40,12 @@ export default async function QueriesPage() {
       </header>
 
       <ul className="space-y-1.5 rounded-xl border border-paper-edge bg-paper">
-        {queries.length === 0 ? (
+        {rows.length === 0 ? (
           <li className="px-4 py-8 text-center text-sm text-ink-muted">
             No visitor messages yet.
           </li>
         ) : (
-          queries.map((q) => (
+          rows.map((q) => (
             <li key={q.sessionId}>
               <Link
                 href={`/admin/sessions/${q.sessionId}`}
@@ -49,6 +60,45 @@ export default async function QueriesPage() {
           ))
         )}
       </ul>
+
+      <Pagination page={page} totalPages={totalPages} />
     </div>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+}: {
+  page: number;
+  totalPages: number;
+}) {
+  if (totalPages <= 1) return null;
+  return (
+    <nav className="flex items-center justify-between text-xs text-ink-soft">
+      <Link
+        href={page > 1 ? `/admin/queries?page=${page - 1}` : "#"}
+        aria-disabled={page <= 1}
+        className={cn(
+          "rounded-full border border-paper-edge px-3 py-1",
+          page <= 1 && "pointer-events-none opacity-40",
+        )}
+      >
+        ← Prev
+      </Link>
+      <span className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
+        {page} / {totalPages}
+      </span>
+      <Link
+        href={page < totalPages ? `/admin/queries?page=${page + 1}` : "#"}
+        aria-disabled={page >= totalPages}
+        className={cn(
+          "rounded-full border border-paper-edge px-3 py-1",
+          page >= totalPages && "pointer-events-none opacity-40",
+        )}
+      >
+        Next →
+      </Link>
+    </nav>
   );
 }

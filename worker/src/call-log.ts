@@ -39,6 +39,14 @@ export interface WorkerCallRow {
    * not requiring a fresh migration).
    */
   resultSummary?: string;
+  /**
+   * P1.15 — provider-shape request/response snapshot for the admin Flow
+   * page. For PSI: request={url, strategy}, response={lighthouse summary}.
+   * For Playwright: request={url}, response={word count, headings, etc.}.
+   * JSONB columns added by migration 0006_model_call_payloads.sql.
+   */
+  requestPayload?: unknown;
+  responsePayload?: unknown;
 }
 
 export async function logWorkerCall(
@@ -67,6 +75,8 @@ export async function logWorkerCall(
     cost_usd: 0,
     latency_ms: row.latencyMs,
     was_blocked: row.wasBlocked,
+    request_payload: row.requestPayload ?? null,
+    response_payload: row.responsePayload ?? null,
   });
   if (error) {
     log.warn({ err: error.message }, "[worker-call] insert failed");
