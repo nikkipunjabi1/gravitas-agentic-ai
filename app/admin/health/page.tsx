@@ -14,12 +14,17 @@ export const revalidate = 30; // cache 30s on the server
  * happy path.
  */
 export default async function HealthPage() {
-  const checks = await Promise.all([
-    checkAnthropic(),
-    checkOllama(),
-    checkChroma(),
-    checkCrawlWorker(),
-  ]);
+  // checkCrawlWorker's /health response also reports Playwright Chromium
+  // status; we extract it into a separate check so the operator sees the
+  // browser binary as a first-class red dot rather than buried in a string.
+  const workerResult = await checkCrawlWorker();
+  const checks = [
+    await checkAnthropic(),
+    await checkOllama(),
+    await checkChroma(),
+    workerResult.check,
+    derivePlaywrightCheck(workerResult.workerHealth),
+  ];
 
   return (
     <div className="space-y-5">
@@ -156,37 +161,65 @@ async function checkChroma(): Promise<Check> {
   return result;
 }
 
-async function checkCrawlWorker(): Promise<Check> {
+/**
+ * The worker /health response surfaces both the worker itself AND the
+ * Playwright Chromium binary state. We fetch it once and return BOTH the
+ * worker Check and the raw payload, so the page can derive a separate
+ * Playwright check without a second round-trip.
+ */
+interface WorkerHealthPayload {
+  engine?: string;
+  uptimeMs?: number;
+  playwrightChromium?: {
+    installed: boolean;
+    path: string | null;
+    hint: string | null;
+  };
+}
+
+async function checkCrawlWorker(): Promise<{
+  check: Check;
+  workerHealth: WorkerHealthPayload | null;
+}> {
   const base = process.env.CRAWL_WORKER_URL;
   const secret = process.env.CRAWL_WORKER_SHARED_SECRET;
   if (!base) {
     return {
-      service: "Crawl worker",
-      endpoint: "(not configured)",
-      ok: false,
-      message: "CRAWL_WORKER_URL not set",
-      latencyMs: null,
-      hint: "Set CRAWL_WORKER_URL=http://localhost:8787 in .env.local.",
+      check: {
+        service: "Crawl worker",
+        endpoint: "(not configured)",
+        ok: false,
+        message: "CRAWL_WORKER_URL not set",
+        latencyMs: null,
+        hint: "Set CRAWL_WORKER_URL=http://localhost:8787 in .env.local.",
+      },
+      workerHealth: null,
     };
   }
   if (!secret || secret.length < 16) {
     return {
-      service: "Crawl worker",
-      endpoint: base,
-      ok: false,
-      message: "CRAWL_WORKER_SHARED_SECRET not set (or shorter than 16 chars)",
-      latencyMs: null,
-      hint:
-        "Generate a long random string and set it as CRAWL_WORKER_SHARED_SECRET in .env.local. The same value is read by both the Next app and the worker.",
-      hintCmd: "openssl rand -hex 32",
+      check: {
+        service: "Crawl worker",
+        endpoint: base,
+        ok: false,
+        message: "CRAWL_WORKER_SHARED_SECRET not set (or shorter than 16 chars)",
+        latencyMs: null,
+        hint:
+          "Generate a long random string and set it as CRAWL_WORKER_SHARED_SECRET in .env.local. The same value is read by both the Next app and the worker.",
+        hintCmd: "openssl rand -hex 32",
+      },
+      workerHealth: null,
     };
   }
+
+  let captured: WorkerHealthPayload | null = null;
   const result = await timed("Crawl worker", `${base}/health`, async () => {
     const res = await fetchWithTimeout(`${base}/health`, 2000, {
       headers: { authorization: `Bearer ${secret}` },
     });
     if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
-    const data = (await res.json()) as { engine?: string; uptimeMs?: number };
+    const data = (await res.json()) as WorkerHealthPayload;
+    captured = data;
     return {
       ok: true,
       message: `${data.engine ?? "ok"} · uptime ${Math.round((data.uptimeMs ?? 0) / 1000)}s`,
@@ -194,13 +227,73 @@ async function checkCrawlWorker(): Promise<Check> {
   });
   if (!result.ok) {
     return {
-      ...result,
-      hint:
-        "Start the crawl worker in a separate terminal. It serves on port 8787 by default. Make sure CRAWL_WORKER_SHARED_SECRET matches the value the worker reads (same .env.local).",
-      hintCmd: "pnpm dev:worker",
+      check: {
+        ...result,
+        hint:
+          "Start the crawl worker in a separate terminal. It serves on port 8787 by default. Make sure CRAWL_WORKER_SHARED_SECRET matches the value the worker reads (same .env.local).",
+        hintCmd: "pnpm dev:worker",
+      },
+      workerHealth: null,
     };
   }
-  return result;
+  return { check: result, workerHealth: captured };
+}
+
+/**
+ * Derive a Playwright Chromium check from the worker's /health payload.
+ *
+ * "Why a separate check?" — when Chromium is missing, audits silently lose
+ * their Playwright supplement (structural HTML extraction). PSI still
+ * carries the score path, so the operator sees a "successful" audit with
+ * subtly thinner findings. Surfacing it as its own red dot on /admin/health
+ * means the install gap shows up before the next audit demo, not during it.
+ *
+ * Greyed out (ok=true, message="—") when the worker itself is down, since
+ * we can't know the state without it.
+ */
+function derivePlaywrightCheck(
+  workerHealth: WorkerHealthPayload | null,
+): Check {
+  if (!workerHealth) {
+    return {
+      service: "Playwright Chromium",
+      endpoint: "(via crawl worker)",
+      ok: true,
+      message: "Worker offline — Chromium state unknown",
+      latencyMs: null,
+    };
+  }
+  const pc = workerHealth.playwrightChromium;
+  if (!pc) {
+    return {
+      service: "Playwright Chromium",
+      endpoint: "(via crawl worker)",
+      ok: false,
+      message: "Worker /health didn't report Chromium status",
+      latencyMs: null,
+      hint:
+        "The worker version is older than P1.13. Pull the latest, run `pnpm install` in `worker/`, and restart `pnpm dev:worker`.",
+    };
+  }
+  if (pc.installed) {
+    return {
+      service: "Playwright Chromium",
+      endpoint: pc.path ?? "(installed)",
+      ok: true,
+      message: "Chromium binary present — Playwright crawls will run",
+      latencyMs: null,
+    };
+  }
+  return {
+    service: "Playwright Chromium",
+    endpoint: pc.path ?? "(missing)",
+    ok: false,
+    message: pc.hint ?? "Chromium binary not installed",
+    latencyMs: null,
+    hint:
+      "Playwright needs its own Chromium build. Without it, audits ship with PSI data only — visitor-facing findings are correct but lose structural details (heading hierarchy, word counts, design-token fingerprints). One-time install:",
+    hintCmd: "cd worker; pnpm exec playwright install chromium",
+  };
 }
 
 // ---------------------------------------------------------------------------

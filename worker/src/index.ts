@@ -4,6 +4,8 @@
 import "./env-loader.js";
 
 import Fastify from "fastify";
+import { existsSync } from "node:fs";
+import { chromium } from "playwright";
 import { CrawlRequest, AuditResult, ErrorResponse } from "./types.js";
 import { authPreHandler } from "./auth.js";
 import { sanitiseUrl } from "./url-guard.js";
@@ -52,8 +54,49 @@ app.get("/health", async () => {
     uptimeMs: Math.round(process.uptime() * 1000),
     version: "0.0.0",
     engine: "playwright+cheerio",
+    playwrightChromium: checkPlaywrightChromium(),
   };
 });
+
+/**
+ * Detect whether the Playwright Chromium binary is installed locally.
+ * Playwright's `chromium.executablePath()` returns the EXPECTED file path
+ * even when the binary isn't downloaded yet — so we have to stat the file
+ * ourselves rather than trust the resolver.
+ *
+ * Surfaced on /admin/health so the operator sees "Playwright Chromium
+ * missing" as a red dot instead of having to discover it via a failed
+ * audit in /admin/sessions/<id>.
+ */
+function checkPlaywrightChromium(): {
+  installed: boolean;
+  path: string | null;
+  hint: string | null;
+} {
+  let path: string | null = null;
+  try {
+    path = chromium.executablePath();
+  } catch (err) {
+    return {
+      installed: false,
+      path: null,
+      hint: `playwright resolver threw: ${(err as Error).message}`,
+    };
+  }
+  if (!path) {
+    return {
+      installed: false,
+      path: null,
+      hint: "playwright.executablePath() returned empty",
+    };
+  }
+  const installed = existsSync(path);
+  return {
+    installed,
+    path,
+    hint: installed ? null : `binary not found at ${path}`,
+  };
+}
 
 app.post("/crawl", async (req, reply) => {
   // ---- Validate body ----------------------------------------------------
