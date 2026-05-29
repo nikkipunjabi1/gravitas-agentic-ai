@@ -96,6 +96,7 @@ const ACTION_LABELS: Record<UIActionType, string> = {
   ThemesGrid: "Themes grid",
   RateLimitReached: "Rate limit reached",
   DebugAction: "Debug",
+  ContactCard: "Get in touch",
 };
 
 function safeStringify(value: unknown): string {

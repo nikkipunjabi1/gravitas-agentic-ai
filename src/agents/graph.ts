@@ -10,6 +10,7 @@ import type { AuditResult, SessionState, StrategyResult, SolutionMap, VisitorCon
 import { DailyCapExceeded } from "@/lib/models";
 import type { DataStreamWriter } from "@/lib/stream/data-stream";
 import { appendMessage, updateSessionVisitor } from "@/server/sessions";
+import { getFeatureFlags } from "@/server/runtime-config";
 import type { Message as RouterMessage } from "@/lib/models";
 
 /**
@@ -76,6 +77,13 @@ const GraphState = Annotation.Root({
   assistantText: Annotation<string>({ value: replace, default: () => "" }),
   capReached: Annotation<boolean>({ value: replace, default: () => false }),
   rateLimitedAudit: Annotation<boolean>({ value: replace, default: () => false }),
+  /**
+   * P1.18 — populated by the discovery node from getFeatureFlags(). The
+   * router edge `routeAfterDiscovery` is sync, so it can't await the
+   * settings read itself; we resolve once per turn and pass the result
+   * through state.
+   */
+  featureAuditEnabled: Annotation<boolean>({ value: replace, default: () => true }),
   terminalPhase: Annotation<SessionState["phase"]>({
     value: replace,
     default: () => "discovery",
@@ -114,6 +122,7 @@ async function discoveryNode(
   config: ConfigurableShape,
 ): Promise<Partial<GraphStateT>> {
   const rt = getRuntime(config);
+  const featureFlags = await getFeatureFlags();
 
   try {
     const out = await runDiscovery(
@@ -152,6 +161,7 @@ async function discoveryNode(
       visitor: mergedVisitor,
       assistantText: out.assistantText,
       terminalPhase: "discovery" as SessionState["phase"],
+      featureAuditEnabled: featureFlags.auditEnabled,
     };
   } catch (err) {
     if (err instanceof DailyCapExceeded) {
@@ -323,6 +333,11 @@ function routeAfterDiscovery(
   state: GraphStateT,
 ): "do_audit" | "do_cap_reached" | typeof END {
   if (state.capReached) return "do_cap_reached";
+  // P1.18 feature flag — admin can disable the entire audit pipeline for
+  // a "chatbot only" bespoke deployment. The flag is read async by the
+  // discovery node and surfaced via state.featureAuditEnabled so this
+  // sync edge function can act on it.
+  if (state.featureAuditEnabled === false) return END;
   // Audit when we have a URL AND either (a) we've never audited, or (b) the
   // current URL differs from what we audited last time. The url comparison
   // is what lets a visitor say "now audit a different page" mid-session;

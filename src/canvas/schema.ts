@@ -311,6 +311,42 @@ const DebugAction = z.object({
   data: z.unknown(),
 });
 
+/**
+ * ContactCard — P1.18 reference component.
+ *
+ * Renders the configured Gravitas contact (name / role / email / phone) as
+ * a callable card. Designed as both a real surface (emitted by the closing
+ * Output turn or when a visitor explicitly asks "how do I reach you?")
+ * AND a copy-paste example for plugging in further custom UI components.
+ *
+ * Pattern to add a new component (any future bespoke client):
+ *   1. Add a new `const Foo = z.object({ type: z.literal("Foo"), ... })`
+ *      branch here.
+ *   2. Add it to the discriminated union below.
+ *   3. Build `src/canvas/components/foo.tsx` taking
+ *      `{ action }: { action: UIActionOf<"Foo"> }`.
+ *   4. Register it in `src/canvas/registry.tsx`.
+ *   5. Have an agent node emit it via `renderUI(writer, { type: "Foo", ... })`.
+ *
+ * That's the full surface — see docs/UI_CONTRACT.md for the canonical
+ * walkthrough.
+ */
+const ContactCard = z.object({
+  type: z.literal("ContactCard"),
+  id: z.string().uuid(),
+  version: z.literal(1),
+  data: z.object({
+    name: z.string().min(1).max(120),
+    role: z.string().max(120).optional(),
+    email: z.string().email().optional(),
+    phone: z.string().max(40).optional(),
+    /** Optional intro line above the contact block. */
+    headline: z.string().max(200).optional(),
+    /** Optional small explainer below. */
+    body: z.string().max(400).optional(),
+  }),
+});
+
 export const UIAction = z.discriminatedUnion("type", [
   AuditFindings,
   MaturityChart,
@@ -324,6 +360,7 @@ export const UIAction = z.discriminatedUnion("type", [
   ThemesGrid,
   RateLimitReached,
   DebugAction,
+  ContactCard,
 ]);
 
 export type UIAction = z.infer<typeof UIAction>;
@@ -347,4 +384,5 @@ export const UI_ACTION_TYPES: readonly UIActionType[] = [
   "ThemesGrid",
   "RateLimitReached",
   "DebugAction",
+  "ContactCard",
 ] as const;

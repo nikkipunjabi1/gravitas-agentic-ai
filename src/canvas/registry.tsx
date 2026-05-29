@@ -8,6 +8,7 @@ import { ThemesGrid } from "@/canvas/components/themes-grid";
 import { RateLimitReached } from "@/canvas/components/rate-limit-reached";
 import { DailyCapReached } from "@/canvas/components/daily-cap-reached";
 import { SolutionMap } from "@/canvas/components/solution-map";
+import { ContactCard } from "@/canvas/components/contact-card";
 import { makeStub } from "@/canvas/components/_stub";
 
 /**
@@ -41,6 +42,13 @@ export const registry: {
 
   // ---- Phase 1 (promoted from Phase 2 — agent emits real data) ----------
   SolutionMap,
+
+  // ---- P1.18 (custom-component reference) -------------------------------
+  // ContactCard is both a working surface AND the copy-paste example in
+  // docs/UI_CONTRACT.md for how to plug additional components into the
+  // canvas. To add your own, mirror the four steps the doc walks through:
+  // schema branch → component file → registry entry → agent emit-site.
+  ContactCard,
 
   // ---- Phase 2 (Multi-agent Co-Pilot) ------------------------------------
   TechStackReco: makeStub("TechStackReco", 2),

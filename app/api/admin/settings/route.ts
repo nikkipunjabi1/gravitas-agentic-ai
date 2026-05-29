@@ -158,6 +158,18 @@ function validateForKey(
     return { ok: true, value };
   }
 
+  // Boolean feature flags (P1.18).
+  if (
+    key === "feature_audit_enabled" ||
+    key === "feature_audit_use_psi" ||
+    key === "feature_audit_use_playwright"
+  ) {
+    if (typeof value !== "boolean") {
+      return { ok: false, message: "expected a boolean" };
+    }
+    return { ok: true, value };
+  }
+
   // Free-form strings (prompts, branding text, launcher text).
   // Cap at 32 KB so a runaway paste doesn't blow up the JSONB column.
   if (typeof value === "string") {

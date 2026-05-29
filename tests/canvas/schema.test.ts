@@ -180,7 +180,7 @@ describe("UIAction schema", () => {
     // Sanity check that the convenience array doesn't drift from the schema.
     // We can't enumerate the union at runtime, but we can verify each entry
     // is a non-empty string and the length matches the count in the schema.
-    expect(UI_ACTION_TYPES.length).toBe(12); // Phase 0 — adjust when a new arm lands
+    expect(UI_ACTION_TYPES.length).toBe(13); // P1.18 — adjust when a new arm lands
     for (const t of UI_ACTION_TYPES) {
       expect(typeof t).toBe("string");
       expect(t.length).toBeGreaterThan(0);

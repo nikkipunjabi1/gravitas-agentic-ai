@@ -5,6 +5,7 @@ import type { Accessibility, AuditResult, ContentArchitecture, DesignSignals, Pe
 import { isPrivateAddress } from "./url-guard.js";
 import { runLighthouseViaPsi } from "./lighthouse.js";
 import { logWorkerCall } from "./call-log.js";
+import { getWorkerSetting } from "./settings.js";
 
 /**
  * runCrawl — real Phase 1 implementation.
@@ -75,11 +76,31 @@ export async function runCrawl(
 ): Promise<AuditResult> {
   const startedAt = Date.now();
   const sessionId = opts.sessionId ?? null;
-  log.info({ url: url.href, sessionId }, "crawl: starting (PSI + Playwright, parallel)");
+
+  // P1.18 feature flags — admins can disable either crawl engine per
+  // bespoke deployment. Read from settings (cached 60s).
+  const [usePsi, usePlaywright] = await Promise.all([
+    getWorkerSetting("feature_audit_use_psi", true),
+    getWorkerSetting("feature_audit_use_playwright", true),
+  ]);
+  if (!usePsi && !usePlaywright) {
+    throw new Error(
+      "Both PSI and Playwright are disabled in admin settings — at least one engine must be enabled for the audit to run.",
+    );
+  }
+
+  log.info(
+    { url: url.href, sessionId, usePsi, usePlaywright },
+    "crawl: starting (engines per feature flags)",
+  );
 
   const [psiSettled, pwSettled] = await Promise.allSettled([
-    runLighthouseViaPsi({ url: url.href, sessionId }, log),
-    tryPlaywrightCrawl(url, log, sessionId),
+    usePsi
+      ? runLighthouseViaPsi({ url: url.href, sessionId }, log)
+      : Promise.reject(new Error("PSI disabled in admin settings")),
+    usePlaywright
+      ? tryPlaywrightCrawl(url, log, sessionId)
+      : Promise.resolve(null),
   ]);
 
   const psi = psiSettled.status === "fulfilled" ? psiSettled.value : null;

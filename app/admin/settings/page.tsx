@@ -3,6 +3,7 @@ import {
   getEmbedConfig,
   getKbConfig,
   getAgentPrompts,
+  getFeatureFlags,
 } from "@/server/runtime-config";
 import { listSettings } from "@/server/settings";
 import { SettingsTabs } from "./settings-tabs";
@@ -30,11 +31,12 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage() {
   // Load every section's current effective values in parallel — server
   // component, single render, no client fetches.
-  const [branding, embed, kb, prompts, rawSettings] = await Promise.all([
+  const [branding, embed, kb, prompts, features, rawSettings] = await Promise.all([
     getBrandingConfig(),
     getEmbedConfig(),
     getKbConfig(),
     getAgentPrompts(),
+    getFeatureFlags(),
     listSettings(),
   ]);
 
@@ -59,6 +61,7 @@ export default async function SettingsPage() {
         embed={embed}
         kb={kb}
         prompts={prompts}
+        features={features}
         // rate-limit values come from the unified listSettings call
         rateLimits={{
           turnLimit:

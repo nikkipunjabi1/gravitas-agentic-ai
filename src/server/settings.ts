@@ -75,6 +75,16 @@ export const SETTING_KEYS = {
   prompt_strategy_json: "prompt_strategy_json",
   prompt_strategy_narration: "prompt_strategy_narration",
   prompt_output_close: "prompt_output_close",
+
+  // ---- Feature flags (P1.18) ----------------------------------------
+  // Master + sub-switches so a bespoke deployment can ship as
+  // "chatbot only" (no audit pipeline at all) OR keep the audit path
+  // active but disable one of its two data sources. When the master
+  // switch is off the sub-switches don't matter — graph short-circuits
+  // before the worker is called.
+  feature_audit_enabled: "feature_audit_enabled",
+  feature_audit_use_psi: "feature_audit_use_psi",
+  feature_audit_use_playwright: "feature_audit_use_playwright",
 } as const;
 
 export type SettingKey = keyof typeof SETTING_KEYS;

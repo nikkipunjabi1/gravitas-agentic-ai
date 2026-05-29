@@ -9,6 +9,7 @@ import type {
   EmbedConfig,
   KbConfig,
   AgentPrompts,
+  FeatureFlags,
 } from "@/server/runtime-config";
 
 interface MetaMap {
@@ -21,6 +22,7 @@ export function SettingsTabs({
   embed,
   kb,
   prompts,
+  features,
   meta,
 }: {
   rateLimits: { turnLimit: number; auditLimit: number };
@@ -28,6 +30,7 @@ export function SettingsTabs({
   embed: EmbedConfig;
   kb: KbConfig;
   prompts: AgentPrompts;
+  features: FeatureFlags;
   meta: MetaMap;
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("rate-limits");
@@ -71,12 +74,21 @@ export function SettingsTabs({
         {activeTab === "prompts" ? (
           <PromptsSection prompts={prompts} meta={meta} />
         ) : null}
+        {activeTab === "features" ? (
+          <FeaturesSection features={features} meta={meta} />
+        ) : null}
       </div>
     </div>
   );
 }
 
-type TabKey = "rate-limits" | "branding" | "embed" | "knowledge-base" | "prompts";
+type TabKey =
+  | "rate-limits"
+  | "branding"
+  | "embed"
+  | "knowledge-base"
+  | "prompts"
+  | "features";
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "rate-limits", label: "Rate limits" },
@@ -84,6 +96,7 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "embed", label: "Embed widget" },
   { key: "knowledge-base", label: "Knowledge base" },
   { key: "prompts", label: "Agent prompts" },
+  { key: "features", label: "Features" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -726,6 +739,102 @@ function SelectFieldCard({
           type="button"
           onClick={() => void save(keyName, draft)}
           className="rounded-full bg-ink px-3 py-1.5 text-xs font-medium text-paper transition hover:bg-ink-soft"
+        >
+          Save
+        </button>
+      </div>
+      <StatusLine entry={status[keyName]} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 6. Features
+// ---------------------------------------------------------------------------
+
+function FeaturesSection({
+  features,
+  meta,
+}: {
+  features: FeatureFlags;
+  meta: MetaMap;
+}) {
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-ink-soft">
+        Top-level switches that decide which agent pipelines run. Use the master
+        switch to ship a &ldquo;chatbot only&rdquo; bespoke deployment (no URL audit, no
+        canvas cards from the audit / strategy / mapping nodes). The two sub-
+        switches choose which data engine runs when the audit is enabled.
+      </p>
+      <BooleanFieldCard
+        keyName="feature_audit_enabled"
+        label="Audit pipeline (master switch)"
+        hint="When OFF, the graph routes Discovery → END. No Audit, Strategy, Solution Mapping, or Output nodes fire. Visitors still get the brand-voice chat replies, but no canvas content from the audit path."
+        initialValue={features.auditEnabled}
+        meta={meta.feature_audit_enabled}
+      />
+      <BooleanFieldCard
+        keyName="feature_audit_use_psi"
+        label="Audit data source: Google PageSpeed Insights"
+        hint="When OFF, the worker skips the PSI call and ships Playwright-only audit data. Turning both PSI and Playwright off makes the audit hard-fail with a clear error."
+        initialValue={features.auditUsePsi}
+        meta={meta.feature_audit_use_psi}
+      />
+      <BooleanFieldCard
+        keyName="feature_audit_use_playwright"
+        label="Audit data source: Local Playwright crawl"
+        hint="When OFF, the worker skips the Playwright crawl and ships PSI-only audit data. Useful for clients whose target sites are public + score-friendly but block headless browsers."
+        initialValue={features.auditUsePlaywright}
+        meta={meta.feature_audit_use_playwright}
+      />
+    </div>
+  );
+}
+
+function BooleanFieldCard({
+  keyName,
+  label,
+  hint,
+  initialValue,
+  meta,
+}: {
+  keyName: SettingKey;
+  label: string;
+  hint?: string;
+  initialValue: boolean;
+  meta?: { updatedAt: string; updatedBy: string | null };
+}) {
+  const { save, status } = useSettingSaver();
+  const [draft, setDraft] = useState(initialValue);
+  return (
+    <div className="space-y-2 rounded-xl border border-paper-edge bg-paper-soft/40 p-4">
+      <FieldHeader keyName={keyName} label={label} hint={hint} meta={meta} />
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={draft}
+          onClick={() => setDraft((v) => !v)}
+          className={cn(
+            "relative inline-flex h-6 w-11 items-center rounded-full transition",
+            draft ? "bg-ink" : "bg-paper-edge",
+          )}
+        >
+          <span
+            className={cn(
+              "inline-block h-5 w-5 transform rounded-full bg-paper transition",
+              draft ? "translate-x-5" : "translate-x-0.5",
+            )}
+          />
+        </button>
+        <span className="font-mono text-xs text-ink-soft">
+          {draft ? "Enabled" : "Disabled"}
+        </span>
+        <button
+          type="button"
+          onClick={() => void save(keyName, draft)}
+          className="ml-auto rounded-full bg-ink px-3 py-1.5 text-xs font-medium text-paper transition hover:bg-ink-soft"
         >
           Save
         </button>

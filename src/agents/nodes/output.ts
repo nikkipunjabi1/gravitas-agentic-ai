@@ -1,5 +1,6 @@
 import "server-only";
 import { getServerRouter } from "@/server/model-router";
+import { renderUI } from "@/agents/tools/render-ui";
 import { DailyCapExceeded, isRouterError } from "@/lib/models";
 import { getClosingContact } from "@/lib/branding";
 import {
@@ -86,6 +87,31 @@ export async function runOutput(
     null,
     2,
   );
+
+  // Emit ContactCard alongside the closing narration so the visitor gets a
+  // callable surface (not just a sentence mentioning the email). The
+  // narration prompt still names the contact in plain language; the card
+  // sits as the canvas closer below it.
+  if (contact.name || contact.email) {
+    renderUI(
+      ctx.writer,
+      {
+        type: "ContactCard",
+        id: crypto.randomUUID(),
+        version: 1,
+        data: {
+          name: contact.name || branding.brandName || "the Gravitas team",
+          role: contact.role || undefined,
+          email: contact.email || undefined,
+          phone: contact.phone || undefined,
+          headline: "Ready to take this further?",
+          body:
+            "Drop a note with what you've heard and where the friction is — we'll come back with a concrete next step within a working day.",
+        },
+      },
+      { sessionId: ctx.sessionId, node: "output" },
+    );
+  }
 
   try {
     const { stream, done } = await router.stream({

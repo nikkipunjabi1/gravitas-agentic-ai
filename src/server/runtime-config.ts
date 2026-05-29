@@ -168,6 +168,32 @@ export async function getAgentPrompts(): Promise<AgentPrompts> {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Feature flags (P1.18)
+//
+// Top-level on/off switches that decide whether the audit pipeline runs at
+// all, and which of its two data sources (Google PSI / local Playwright)
+// fires per ingest. For a bespoke "chatbot only" deployment, set
+// auditEnabled=false in /admin/settings → Features. The graph then routes
+// Discovery → END, no Audit / Strategy / Mapping / Output, no audit
+// canvas cards. Visitor still gets the brand-voice chat.
+// ---------------------------------------------------------------------------
+
+export interface FeatureFlags {
+  auditEnabled: boolean;
+  auditUsePsi: boolean;
+  auditUsePlaywright: boolean;
+}
+
+export async function getFeatureFlags(): Promise<FeatureFlags> {
+  const [auditEnabled, auditUsePsi, auditUsePlaywright] = await Promise.all([
+    getSetting("feature_audit_enabled", true),
+    getSetting("feature_audit_use_psi", true),
+    getSetting("feature_audit_use_playwright", true),
+  ]);
+  return { auditEnabled, auditUsePsi, auditUsePlaywright };
+}
+
 /**
  * Substitute {{var}} placeholders with current branding values.
  */
