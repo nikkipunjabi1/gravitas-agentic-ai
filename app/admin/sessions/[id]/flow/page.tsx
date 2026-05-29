@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSessionDetail } from "@/server/admin/queries";
 import { cn } from "@/lib/utils/cn";
+import { MermaidDiagram } from "./mermaid-diagram";
+import { buildDiagram, type DiagramSessionEvent } from "./build-diagram";
 
 export const dynamic = "force-dynamic";
 
@@ -125,6 +127,41 @@ export default async function SessionFlowPage({
   );
   const totalCostUsd = modelCalls.reduce((sum, c) => sum + c.costUsd, 0);
 
+  // Diagram source — interleave messages + model calls + ui actions in
+  // chronological order so the visual matches the actual sequence.
+  const diagramEvents: DiagramSessionEvent[] = [
+    ...messages.map(
+      (m): DiagramSessionEvent => ({
+        kind: "message",
+        ts: m.ts,
+        node: m.emittedByNode,
+        role: m.role,
+      }),
+    ),
+    ...modelCalls.map(
+      (c): DiagramSessionEvent => ({
+        kind: "model_call",
+        ts: c.ts,
+        node: c.node,
+        provider: c.provider,
+        purpose: c.purpose,
+        latencyMs: c.latencyMs,
+        wasBlocked: c.wasBlocked,
+      }),
+    ),
+    ...uiActions.map(
+      (u): DiagramSessionEvent => ({
+        kind: "ui_action",
+        ts: u.ts,
+        // ui_actions don't store the originating node directly — derive it
+        // from the action type via the same map the phase cards use.
+        node: phaseForActionType(u.actionType),
+        actionType: u.actionType,
+      }),
+    ),
+  ];
+  const diagramSource = buildDiagram({ sessionId: id, events: diagramEvents });
+
   return (
     <div className="space-y-6">
       <header className="space-y-2">
@@ -166,20 +203,57 @@ export default async function SessionFlowPage({
         </dl>
       </header>
 
-      <ol className="space-y-2">
-        {buckets.map((bucket, i) => (
-          <li key={bucket.node} className="relative">
-            <NodeCard bucket={bucket} />
-            {i < buckets.length - 1 ? (
-              <div className="my-1 flex justify-center" aria-hidden="true">
-                <span className="font-mono text-base text-ink-muted/60">↓</span>
-              </div>
-            ) : null}
-          </li>
-        ))}
-      </ol>
+      <section className="space-y-2">
+        <h2 className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
+          Sequence diagram (live data for this session)
+        </h2>
+        <MermaidDiagram
+          source={diagramSource}
+          caption="Each arrow is a real event from this session. Greyed-out actors got no messages — that node never ran. Crossed arrows (X) indicate blocked / failed calls (e.g. Playwright Chromium missing, PSI rate-limited)."
+        />
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="font-mono text-[10px] uppercase tracking-widest text-ink-muted">
+          Phase breakdown
+        </h2>
+        <ol className="space-y-2">
+          {buckets.map((bucket, i) => (
+            <li key={bucket.node} className="relative">
+              <NodeCard bucket={bucket} />
+              {i < buckets.length - 1 ? (
+                <div className="my-1 flex justify-center" aria-hidden="true">
+                  <span className="font-mono text-base text-ink-muted/60">↓</span>
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      </section>
     </div>
   );
+}
+
+/**
+ * UI actions live in `ui_actions_emitted` with no explicit node column —
+ * we map the action TYPE back to the phase that emits it. Same lookup
+ * the phase cards use; kept here so the diagram and the cards agree.
+ */
+function phaseForActionType(actionType: string): string {
+  const map: Record<string, string> = {
+    KeepAndBuildOn: "audit",
+    AuditFindings: "audit",
+    MaturityChart: "strategy",
+    ThemesGrid: "strategy",
+    RoadmapWidget: "strategy",
+    SolutionMap: "solution-mapping",
+    TechStackReco: "solution-mapping",
+    LeadGenForm: "output",
+    CapReached: "cap-reached",
+    RateLimitReached: "rate-limit",
+    DebugAction: "discovery",
+  };
+  return map[actionType] ?? "discovery";
 }
 
 // ---------------------------------------------------------------------------
